@@ -243,15 +243,24 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
     }
     
     /**
-     * FIXED: First march with CORRECTED view logic
+     * FIXED: First march with CORRECTED view logic - now clicks world_icon after march queue
      */
     private boolean startFirstMarch(String resourceType, int queueNumber) {
         try {
             System.out.println("🚀 Starting FIRST march for " + resourceType + " on queue " + queueNumber);
             
-            // CRITICAL: First verify we're in world view by checking for town_icon
+            // CRITICAL FIX: After setupMarchView() we're in TOWN view, need to click world_icon first
+            System.out.println("📍 After march queue, we're in TOWN view - need to click world_icon");
+            
+            // Click world_icon to switch from town to world view
+            if (!clickWorldIcon()) {
+                System.err.println("❌ Failed to click world_icon to enter world view");
+                return false;
+            }
+            
+            // Now verify we're in world view by checking for town_icon
             if (!verifyWorldViewWithTownIcon()) {
-                System.err.println("❌ Failed to verify world view - cannot proceed with first march");
+                System.err.println("❌ Failed to verify world view after clicking world_icon");
                 return false;
             }
             
@@ -294,6 +303,38 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
         }
     }
     
+    /**
+     * NEW: Click world_icon to enter world view from town view
+     */
+    private boolean clickWorldIcon() {
+        try {
+            System.out.println("🌍 Clicking world_icon to enter world view...");
+            
+            String screenPath = "screenshots/click_world_icon_" + instance.index + ".png";
+            if (!BotUtils.takeScreenshot(instance.index, screenPath)) {
+                System.err.println("Failed to take screenshot for world_icon");
+                return false;
+            }
+            
+            Point worldIcon = BotUtils.findImageOnScreen(screenPath, "world_icon.png", 0.6);
+            if (worldIcon != null) {
+                System.out.println("✅ Found world_icon at " + worldIcon);
+                if (BotUtils.clickMenu(instance.index, worldIcon)) {
+                    System.out.println("✅ Clicked world_icon successfully");
+                    Thread.sleep(3000); // Wait for world view to load
+                    return true;
+                }
+            }
+            
+            System.err.println("❌ Could not find or click world_icon");
+            return false;
+            
+        } catch (Exception e) {
+            System.err.println("❌ Error clicking world_icon: " + e.getMessage());
+            return false;
+        }
+    }
+    
     private boolean verifyWorldViewWithTownIcon() {
         try {
             System.out.println("🌍 Verifying world view by checking for town_icon...");
@@ -320,19 +361,18 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
     }
     
     /**
-     * FIXED: Subsequent march - COMPLETELY skip all view checks, go directly to search
+     * FIXED: Subsequent march - We remain in WORLD view after deploy, no navigation needed
      */
     private boolean startSubsequentMarchSimplified(String resourceType, int queueNumber) {
         try {
-            System.out.println("🔄 Starting SUBSEQUENT march for " + resourceType + " on queue " + queueNumber + " (ultra-simplified)");
-            System.out.println("✅ After deploying previous march, we're on world view - NO view checks needed");
+            System.out.println("🔄 Starting SUBSEQUENT march for " + resourceType + " on queue " + queueNumber);
+            System.out.println("✅ We remain in WORLD view after previous deploy - no navigation needed");
             
-            // CRITICAL FIX: Absolutely NO view checking or icon clicking
-            // We are GUARANTEED to be on world view after deploying a march
-            // Skip ALL of: ensureWorldView(), town_icon detection, world_icon clicking
+            // Add a small delay to let the UI settle after the previous deploy
+            Thread.sleep(3000);
             
-            // Go DIRECTLY to search - this is the ONLY step needed
-            System.out.println("🔍 Going DIRECTLY to search - no UI navigation needed");
+            // We're already in world view, just click search button again
+            System.out.println("🔍 Clicking search button (already in world view)");
             
             if (!clickSearchIconSimplified()) {
                 System.err.println("❌ Failed to click search icon for subsequent march");
@@ -369,11 +409,14 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
             return true;
             
         } catch (Exception e) {
-            System.err.println("❌ Error in ultra-simplified subsequent march: " + e.getMessage());
+            System.err.println("❌ Error in subsequent march: " + e.getMessage());
             return false;
         }
     }
     
+    /**
+     * FIXED: Better handling of navigation between town and world views
+     */
     private boolean ensureWorldView() {
         try {
             System.out.println("🌍 Ensuring world view...");
@@ -391,7 +434,8 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                 return true;
             }
             
-            // If not in world view, check if we're in town view (world_icon visible)
+            // If not in world view, we must be in town view - click world_icon
+            System.out.println("📍 Not in world view, looking for world_icon to click...");
             Point worldIcon = BotUtils.findImageOnScreen(screenPath, "world_icon.png", 0.6);
             if (worldIcon != null) {
                 System.out.println("🏘️ Found world_icon - currently in town view, switching to world view");
@@ -407,7 +451,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                 }
             }
             
-            System.err.println("❌ Could not determine current view state");
+            System.err.println("❌ Could not determine current view state or find navigation icons");
             return false;
             
         } catch (Exception e) {
@@ -415,6 +459,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
             return false;
         }
     }
+    
     /**
      * SIMPLIFIED: Click search icon using known working position - NO icon detection
      */
@@ -845,14 +890,13 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                 
                 if (BotUtils.clickMenu(instance.index, deployButton)) {
                     System.out.println("✅ Clicked deploy button successfully");
-                    Thread.sleep(2000);
+                    Thread.sleep(3000); // Wait longer for deployment to complete
                     
-                    // Click any confirmation dialog that might appear
-                    Point confirmPoint = new Point(400, 750);
-                    BotUtils.clickMenu(instance.index, confirmPoint);
-                    Thread.sleep(2000);
+                    // REMOVED: Don't click any confirmation that might hit town_icon
+                    // The Point(400, 750) might be near the town_icon location
                     
                     System.out.println("🎉 March deployed successfully with time: " + extractedTime);
+                    System.out.println("📍 Remaining in world view after deploy");
                     return true;
                 } else {
                     System.err.println("❌ Failed to click deploy button");
