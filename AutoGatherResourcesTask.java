@@ -249,9 +249,9 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
         try {
             System.out.println("🚀 Starting FIRST march for " + resourceType + " on queue " + queueNumber);
             
-            // Now that the view logic is CORRECTED, we can safely check our view state
-            if (!ensureWorldView()) {
-                System.err.println("❌ Failed to ensure world view");
+            // CRITICAL: First verify we're in world view by checking for town_icon
+            if (!verifyWorldViewWithTownIcon()) {
+                System.err.println("❌ Failed to verify world view - cannot proceed with first march");
                 return false;
             }
             
@@ -286,11 +286,35 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
             }
             
             System.out.println("✅ Successfully started FIRST " + resourceType + " march on queue " + queueNumber);
-            System.out.println("🎯 After deployment, we are guaranteed to be on world view for subsequent marches");
             return true;
             
         } catch (Exception e) {
             System.err.println("❌ Error starting first march: " + e.getMessage());
+            return false;
+        }
+    }
+    
+    private boolean verifyWorldViewWithTownIcon() {
+        try {
+            System.out.println("🌍 Verifying world view by checking for town_icon...");
+            
+            String screenPath = "screenshots/verify_world_view_" + instance.index + ".png";
+            if (!BotUtils.takeScreenshot(instance.index, screenPath)) {
+                System.err.println("Failed to take screenshot for world view verification");
+                return false;
+            }
+            
+            Point townIcon = BotUtils.findImageOnScreen(screenPath, "town_icon.png", 0.6);
+            if (townIcon != null) {
+                System.out.println("✅ Verified world view - found town_icon at " + townIcon);
+                return true;
+            }
+            
+            System.err.println("❌ Could not find town_icon - not in world view");
+            return false;
+            
+        } catch (Exception e) {
+            System.err.println("❌ Error verifying world view: " + e.getMessage());
             return false;
         }
     }
@@ -352,50 +376,45 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
     
     private boolean ensureWorldView() {
         try {
-            System.out.println("🌍 Step 4: Ensuring world view...");
+            System.out.println("🌍 Ensuring world view...");
             
-            String screenPath = "screenshots/step4_world_view_" + instance.index + ".png";
+            String screenPath = "screenshots/world_view_check_" + instance.index + ".png";
             if (!BotUtils.takeScreenshot(instance.index, screenPath)) {
-                System.err.println("Failed to take screenshot for step 4");
+                System.err.println("Failed to take screenshot for world view check");
                 return false;
             }
             
-            Point townIcon = BotUtils.findImageOnScreen(screenPath, "town_icon.png", 0.3);
-            Point worldIcon = BotUtils.findImageOnScreen(screenPath, "world_icon.png", 0.3);
-            
+            // First check if we're already in world view (town_icon visible)
+            Point townIcon = BotUtils.findImageOnScreen(screenPath, "town_icon.png", 0.6);
             if (townIcon != null) {
-                System.out.println("✅ Step 4: Found town_icon at " + townIcon + " - we are already in WORLD view!");
-                System.out.println("🎯 Perfect! We're in world view where search_icon is available");
-                return true;
-            } else if (worldIcon != null) {
-                System.out.println("🏘️ Step 4: Found world_icon at " + worldIcon + " - we are in TOWN view, need to switch");
-                if (BotUtils.clickMenu(instance.index, worldIcon)) {
-                    Thread.sleep(3000);
-                    System.out.println("✅ Step 4: Successfully switched from town to world view");
-                    return true;
-                } else {
-                    System.err.println("❌ Failed to click world_icon to switch to world view");
-                    return false;
-                }
-            } else {
-                System.out.println("🔍 Step 4: Neither town_icon nor world_icon found, checking for search button...");
-                
-                Point searchButton = BotUtils.findImageOnScreen(screenPath, "search_button.png", 0.3);
-                if (searchButton != null) {
-                    System.out.println("✅ Step 4: Found search_button - we're in world view");
-                    return true;
-                }
-                
-                System.out.println("⚠️ Step 4: View state uncertain, proceeding anyway...");
+                System.out.println("✅ Already in world view (town_icon found)");
                 return true;
             }
             
+            // If not in world view, check if we're in town view (world_icon visible)
+            Point worldIcon = BotUtils.findImageOnScreen(screenPath, "world_icon.png", 0.6);
+            if (worldIcon != null) {
+                System.out.println("🏘️ Found world_icon - currently in town view, switching to world view");
+                if (BotUtils.clickMenu(instance.index, worldIcon)) {
+                    Thread.sleep(3000);
+                    
+                    // Verify we successfully switched to world view
+                    if (!verifyWorldViewWithTownIcon()) {
+                        System.err.println("❌ Failed to switch to world view");
+                        return false;
+                    }
+                    return true;
+                }
+            }
+            
+            System.err.println("❌ Could not determine current view state");
+            return false;
+            
         } catch (Exception e) {
-            System.err.println("❌ Step 4 error: " + e.getMessage());
+            System.err.println("❌ Error ensuring world view: " + e.getMessage());
             return false;
         }
     }
-    
     /**
      * SIMPLIFIED: Click search icon using known working position - NO icon detection
      */
