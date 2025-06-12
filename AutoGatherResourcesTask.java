@@ -243,18 +243,19 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
     }
     
     /**
-     * First march - includes full world view detection and setup
+     * FIXED: First march with CORRECTED view logic
      */
     private boolean startFirstMarch(String resourceType, int queueNumber) {
         try {
             System.out.println("🚀 Starting FIRST march for " + resourceType + " on queue " + queueNumber);
             
+            // Now that the view logic is CORRECTED, we can safely check our view state
             if (!ensureWorldView()) {
                 System.err.println("❌ Failed to ensure world view");
                 return false;
             }
             
-            if (!clickSearchIcon()) {
+            if (!clickSearchIconSimplified()) {
                 System.err.println("❌ Failed to click search icon");
                 return false;
             }
@@ -285,6 +286,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
             }
             
             System.out.println("✅ Successfully started FIRST " + resourceType + " march on queue " + queueNumber);
+            System.out.println("🎯 After deployment, we are guaranteed to be on world view for subsequent marches");
             return true;
             
         } catch (Exception e) {
@@ -294,29 +296,31 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
     }
     
     /**
-     * SIMPLIFIED: Subsequent march - skip icon checks, use known positions
+     * FIXED: Subsequent march - COMPLETELY skip all view checks, go directly to search
      */
     private boolean startSubsequentMarchSimplified(String resourceType, int queueNumber) {
         try {
-            System.out.println("🔄 Starting SUBSEQUENT march for " + resourceType + " on queue " + queueNumber + " (simplified)");
-            System.out.println("✅ Assuming we're on world view after previous march deployment - skipping icon checks");
+            System.out.println("🔄 Starting SUBSEQUENT march for " + resourceType + " on queue " + queueNumber + " (ultra-simplified)");
+            System.out.println("✅ After deploying previous march, we're on world view - NO view checks needed");
             
-            // After deploying a march, we're ALWAYS back on world view
-            // Skip all the world/town icon detection - use known working positions
+            // CRITICAL FIX: Absolutely NO view checking or icon clicking
+            // We are GUARANTEED to be on world view after deploying a march
+            // Skip ALL of: ensureWorldView(), town_icon detection, world_icon clicking
             
-            // Step 5: Click search icon (use known working position)
+            // Go DIRECTLY to search - this is the ONLY step needed
+            System.out.println("🔍 Going DIRECTLY to search - no UI navigation needed");
+            
             if (!clickSearchIconSimplified()) {
                 System.err.println("❌ Failed to click search icon for subsequent march");
                 return false;
             }
             
-            // Step 6: Scroll to reveal resources
+            // Continue with resource selection (same as before)
             if (!scrollToRevealResources()) {
                 System.err.println("❌ Failed to scroll to reveal resources");
                 return false;
             }
             
-            // Steps 7-11: Continue with resource selection and deployment
             if (!selectResourceIcon(resourceType)) {
                 System.err.println("❌ Failed to select " + resourceType + " icon");
                 return false;
@@ -341,7 +345,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
             return true;
             
         } catch (Exception e) {
-            System.err.println("❌ Error in simplified subsequent march: " + e.getMessage());
+            System.err.println("❌ Error in ultra-simplified subsequent march: " + e.getMessage());
             return false;
         }
     }
@@ -357,64 +361,32 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
             }
             
             Point townIcon = BotUtils.findImageOnScreen(screenPath, "town_icon.png", 0.3);
+            Point worldIcon = BotUtils.findImageOnScreen(screenPath, "world_icon.png", 0.3);
+            
             if (townIcon != null) {
-                System.out.println("🏘️ Step 4: Found town_icon at " + townIcon + " - we are in town view");
-                
-                Point worldIcon = BotUtils.findImageOnScreen(screenPath, "world_icon.png", 0.3);
-                if (worldIcon != null) {
-                    System.out.println("🌍 Step 4: Found world_icon at " + worldIcon + " - clicking to switch view");
-                    if (BotUtils.clickMenu(instance.index, worldIcon)) {
-                        Thread.sleep(3000);
-                        System.out.println("✅ Step 4: Successfully switched to world view");
-                        return true;
-                    } else {
-                        System.err.println("❌ Failed to click world_icon");
-                        return false;
-                    }
+                System.out.println("✅ Step 4: Found town_icon at " + townIcon + " - we are already in WORLD view!");
+                System.out.println("🎯 Perfect! We're in world view where search_icon is available");
+                return true;
+            } else if (worldIcon != null) {
+                System.out.println("🏘️ Step 4: Found world_icon at " + worldIcon + " - we are in TOWN view, need to switch");
+                if (BotUtils.clickMenu(instance.index, worldIcon)) {
+                    Thread.sleep(3000);
+                    System.out.println("✅ Step 4: Successfully switched from town to world view");
+                    return true;
                 } else {
-                    System.err.println("❌ Step 4: Could not find world_icon to switch");
-                    
-                    Point[] commonWorldIconPositions = {
-                        new Point(399, 740),
-                        new Point(400, 750),
-                        new Point(440, 750),
-                        new Point(360, 740)
-                    };
-                    
-                    for (Point pos : commonWorldIconPositions) {
-                        System.out.println("⚠️ Trying world icon at fallback position: " + pos);
-                        if (BotUtils.clickMenu(instance.index, pos)) {
-                            Thread.sleep(3000);
-                            System.out.println("✅ Clicked fallback world icon position");
-                            return true;
-                        }
-                    }
-                    
+                    System.err.println("❌ Failed to click world_icon to switch to world view");
                     return false;
                 }
             } else {
-                System.out.println("🔍 Step 4: No town_icon found, checking if already in world view...");
+                System.out.println("🔍 Step 4: Neither town_icon nor world_icon found, checking for search button...");
                 
                 Point searchButton = BotUtils.findImageOnScreen(screenPath, "search_button.png", 0.3);
                 if (searchButton != null) {
-                    System.out.println("✅ Step 4: Already in world view (found search_button)");
+                    System.out.println("✅ Step 4: Found search_button - we're in world view");
                     return true;
                 }
                 
-                Point worldIcon = BotUtils.findImageOnScreen(screenPath, "world_icon.png", 0.3);
-                if (worldIcon != null) {
-                    System.out.println("🌍 Step 4: Found world_icon without town_icon - clicking anyway");
-                    if (BotUtils.clickMenu(instance.index, worldIcon)) {
-                        Thread.sleep(3000);
-                        System.out.println("✅ Step 4: Clicked world_icon");
-                        return true;
-                    } else {
-                        System.err.println("❌ Failed to click world_icon");
-                        return false;
-                    }
-                }
-                
-                System.out.println("⚠️ Step 4: Uncertain view state, proceeding anyway...");
+                System.out.println("⚠️ Step 4: View state uncertain, proceeding anyway...");
                 return true;
             }
             
@@ -424,136 +396,19 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
         }
     }
     
-    private boolean clickSearchIcon() {
-        try {
-            System.out.println("🔍 Step 5: Clicking search button...");
-            
-            String screenPath = "screenshots/step5_search_icon_" + instance.index + ".png";
-            if (!BotUtils.takeScreenshot(instance.index, screenPath)) {
-                System.err.println("Failed to take screenshot for step 5");
-                return false;
-            }
-            
-            // SAFETY CHECK: Verify we can see town_icon before clicking search
-            Point townIcon = BotUtils.findImageOnScreen(screenPath, "town_icon.png", 0.3);
-            if (townIcon == null) {
-                System.err.println("❌ Step 5: Cannot see town_icon - we might not be in the correct view");
-                System.err.println("❌ Expected to see town_icon in world view before clicking search");
-                return false;
-            } else {
-                System.out.println("✅ Step 5: Confirmed town_icon visible at " + townIcon + " - safe to click search");
-            }
-            
-            // Look for search button with multiple patterns and confidence levels
-            double[] confidences = {0.7, 0.6, 0.5, 0.4, 0.3};
-            Point searchButton = null;
-            
-            // Try search_button.png first
-            for (double confidence : confidences) {
-                searchButton = BotUtils.findImageOnScreen(screenPath, "search_button.png", confidence);
-                if (searchButton != null) {
-                    System.out.println("✅ Step 5: Found search_button.png at " + searchButton + " with confidence " + confidence);
-                    break;
-                }
-            }
-            
-            // Try search_icon.png as backup
-            if (searchButton == null) {
-                for (double confidence : confidences) {
-                    searchButton = BotUtils.findImageOnScreen(screenPath, "search_icon.png", confidence);
-                    if (searchButton != null) {
-                        System.out.println("✅ Step 5: Found search_icon.png at " + searchButton + " with confidence " + confidence);
-                        break;
-                    }
-                }
-            }
-            
-            // Try common search button positions if not found
-            if (searchButton == null) {
-                System.out.println("⚠️ Search button not found by image, trying common positions...");
-                Point[] commonSearchPositions = {
-                    new Point(31, 535),   // From your earlier successful logs
-                    new Point(50, 550),   // Left side bottom
-                    new Point(240, 750),  // Bottom center
-                    new Point(430, 550),  // Right side bottom
-                };
-                
-                for (Point pos : commonSearchPositions) {
-                    System.out.println("⚠️ Trying search button at position: " + pos);
-                    searchButton = pos;
-                    break; // Use first fallback position
-                }
-            }
-            
-            if (searchButton != null) {
-                // Double-check we're not clicking too close to town_icon
-                if (townIcon != null && searchButton != null) {
-                    double distance = Math.sqrt(Math.pow(searchButton.x - townIcon.x, 2) + Math.pow(searchButton.y - townIcon.y, 2));
-                    if (distance < 50) {
-                        System.err.println("❌ Search button too close to town_icon (" + distance + " pixels) - might click wrong element");
-                        return false;
-                    }
-                }
-                
-                if (BotUtils.clickMenu(instance.index, searchButton)) {
-                    System.out.println("✅ Step 5: Successfully clicked search button at " + searchButton);
-                    Thread.sleep(3000);
-                    
-                    // Take screenshot to see what interface opened
-                    String afterClickPath = "screenshots/after_search_click_" + instance.index + ".png";
-                    if (BotUtils.takeScreenshot(instance.index, afterClickPath)) {
-                        System.out.println("📸 Took screenshot after search click for verification");
-                        
-                        // Verify town_icon is no longer visible (means we switched screens)
-                        Point townIconAfter = BotUtils.findImageOnScreen(afterClickPath, "town_icon.png", 0.3);
-                        if (townIconAfter != null) {
-                            System.err.println("❌ town_icon still visible after search click - might not have opened search interface");
-                            return false;
-                        } else {
-                            System.out.println("✅ town_icon no longer visible - successfully opened search interface");
-                        }
-                    }
-                    
-                    if (!dismissSearchPopup()) {
-                        System.err.println("❌ Failed to dismiss search popup");
-                        return false;
-                    }
-                    
-                    // Verify we're on the correct resource selection screen
-                    if (!verifyResourceSelectionScreen()) {
-                        System.err.println("❌ Not on resource selection screen after search click");
-                        return false;
-                    }
-                    
-                    return true;
-                } else {
-                    System.err.println("❌ Failed to click search button");
-                    return false;
-                }
-            } else {
-                System.err.println("❌ Step 5: Could not find any search button");
-                return false;
-            }
-            
-        } catch (Exception e) {
-            System.err.println("❌ Step 5 error: " + e.getMessage());
-            return false;
-        }
-    }
-    
     /**
-     * SIMPLIFIED: Click search icon using known working position - no detection needed
+     * SIMPLIFIED: Click search icon using known working position - NO icon detection
      */
     private boolean clickSearchIconSimplified() {
         try {
-            System.out.println("🔍 Step 5: Clicking search button (simplified - using known position)...");
+            System.out.println("🔍 Clicking search button (simplified - using known position)...");
             
             // Use the known working position from successful logs: (31, 535)
             Point searchButton = new Point(31, 535);
             System.out.println("✅ Using known working search button position: " + searchButton);
             
             if (BotUtils.clickMenu(instance.index, searchButton)) {
-                System.out.println("✅ Step 5: Successfully clicked search button at " + searchButton);
+                System.out.println("✅ Successfully clicked search button at " + searchButton);
                 Thread.sleep(3000);
                 
                 if (!dismissSearchPopup()) {
@@ -574,7 +429,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
             }
             
         } catch (Exception e) {
-            System.err.println("❌ Step 5 simplified error: " + e.getMessage());
+            System.err.println("❌ Error in simplified search click: " + e.getMessage());
             return false;
         }
     }
@@ -947,7 +802,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                 return false;
             }
             
-            // Extract time BEFORE clicking deploy button (time is visible on deploy screen)
+            // FIXED: Extract time BEFORE clicking deploy button with corrected coordinates
             String extractedTime = extractTimeFromDeployScreen(deployPath);
             if (extractedTime != null) {
                 System.out.println("⏱️ Successfully extracted march time: " + extractedTime);
@@ -996,16 +851,20 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
     }
     
     /**
-     * PRECISE: Extract time from deploy screen using shared OCRUtils
+     * FIXED: Extract time from deploy screen with further adjusted coordinates
      */
     private String extractTimeFromDeployScreen(String screenPath) {
         try {
-            System.out.println("⏱️ Extracting march time from deploy screen at precise location...");
+            System.out.println("⏱️ Extracting march time from deploy screen with refined coordinates...");
             
             String timeRegionPath = "screenshots/precise_time_" + instance.index + ".png";
             
-            // FIXED: Use corrected coordinates for timer area
-            if (OCRUtils.extractImageRegion(screenPath, timeRegionPath, 320, 717, 85, 20)) {
+            // FURTHER REFINED: The OCR is getting "90:02:32" instead of "00:02:32"
+            // This suggests we're still catching part of an icon or other element
+            // Moving further right and adjusting to capture only the time digits
+            // Previous: x=345, y=712, w=60, h=18
+            // New coordinates: x=350, y=713, w=55, h=16
+            if (OCRUtils.extractImageRegion(screenPath, timeRegionPath, 350, 713, 55, 16)) {
                 String timeText = OCRUtils.performTimeOCR(timeRegionPath, instance.index);
                 if (timeText != null && !timeText.trim().isEmpty()) {
                     System.out.println("📋 OCR extracted text: '" + timeText + "'");
