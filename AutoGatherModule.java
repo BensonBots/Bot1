@@ -82,9 +82,6 @@ public class AutoGatherModule {
             
             System.out.println("✅ Auto Gather task started for instance " + instance.index);
             
-        } catch (AWTException e) {
-            System.err.println("❌ AWT Error starting Auto Gather: " + e.getMessage());
-            Main.addToConsole("❌ " + instance.name + " Auto Gather failed to start: AWT Error");
         } catch (Exception e) {
             System.err.println("❌ Error starting Auto Gather: " + e.getMessage());
             Main.addToConsole("❌ " + instance.name + " Auto Gather failed to start: " + e.getMessage());

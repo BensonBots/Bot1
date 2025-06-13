@@ -527,11 +527,9 @@ public class Main extends JFrame {
                 
                 new AutoGatherResourcesTask(instance).execute();
                 
-            } catch (InterruptedException e) {
+            } catch (InterruptedException | AWTException e) {
                 Thread.currentThread().interrupt();
                 addConsoleMessage("❌ Auto gather start interrupted for " + instance.name);
-            } catch (AWTException e) {
-                e.printStackTrace();
             }
         }).start();
     }
