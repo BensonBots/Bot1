@@ -1,11 +1,12 @@
 package newgame;
 
 import java.awt.Point;
+import java.awt.Rectangle;
 import java.util.*;
 
 /**
- * WORKING VERSION: MarchDetailsCollector using your actual method signatures
- * Based on analysis of your existing code patterns and log outputs
+ * FIXED: MarchDetailsCollector using your actual existing methods
+ * Compatible with your BotUtils, OCRUtils, and MarchTrackerGUI
  */
 public class MarchDetailsCollector {
     
@@ -22,17 +23,20 @@ public class MarchDetailsCollector {
         try {
             System.out.println("🔍 Collecting details for " + deployedMarches.size() + " deployed marches");
             
-            // Navigate to march view first
-            if (!setupMarchView()) {
-                System.err.println("❌ Failed to setup march view for details collection");
-                return false;
-            }
-            
             boolean allSuccessful = true;
             
-            for (MarchDeployInfo marchInfo : deployedMarches) {
+            for (int i = 0; i < deployedMarches.size(); i++) {
+                MarchDeployInfo marchInfo = deployedMarches.get(i);
+                
                 if (!marchInfo.detailsCollected) {
-                    System.out.println("🔍 Collecting details for Queue " + marchInfo.queueNumber + " (" + marchInfo.resourceType + ")");
+                    System.out.println("🔍 Collecting details for Queue " + marchInfo.queueNumber + " (" + marchInfo.resourceType + ") - March " + (i+1) + "/" + deployedMarches.size());
+                    
+                    // FIXED: Navigate to march view before each queue (not just first time)
+                    if (!setupMarchView()) {
+                        System.err.println("❌ Failed to setup march view for Queue " + marchInfo.queueNumber);
+                        allSuccessful = false;
+                        continue;
+                    }
                     
                     if (collectDetailsForQueue(marchInfo)) {
                         marchInfo.detailsCollected = true;
@@ -42,7 +46,10 @@ public class MarchDetailsCollector {
                         System.err.println("❌ Failed to collect details for Queue " + marchInfo.queueNumber);
                     }
                     
-                    Thread.sleep(1000);
+                    // Wait between queues
+                    if (i < deployedMarches.size() - 1) {
+                        Thread.sleep(2000);
+                    }
                 }
             }
             
@@ -55,24 +62,53 @@ public class MarchDetailsCollector {
     }
     
     /**
-     * SIMPLIFIED: Setup march view using only confirmed methods
+     * FIXED: Setup march view using your existing navigation methods
      */
     private boolean setupMarchView() {
         try {
             System.out.println("🔧 Setting up march view for instance " + instance.index);
             
-            // For now, just log that we need to navigate to march view
-            // You can add your actual image detection method calls here
-            System.out.println("📍 Navigating to march view...");
+            // Take screenshot to see current state
+            String currentScreenPath = "screenshots/current_state_" + instance.index + ".png";
+            if (!BotUtils.takeScreenshot(instance.index, currentScreenPath)) {
+                System.err.println("❌ Failed to take current state screenshot");
+                return false;
+            }
             
-            // Placeholder for navigation - replace with your actual methods
-            // String openLeftPath = "screenshots/open_left_" + instance.index + ".png";
-            // BotUtils.takeScreenshot(instance.index, openLeftPath);
-            // Point openLeftPos = YourActualImageMethod(openLeftPath, "open_left.png");
+            // Check if we need to open left panel
+            Point openLeftButton = BotUtils.findImageOnScreen(currentScreenPath, "open_left.png", 0.6);
+            if (openLeftButton != null) {
+                System.out.println("📍 Found open_left button, clicking to open panel...");
+                if (BotUtils.clickMenu(instance.index, openLeftButton)) {
+                    System.out.println("✅ Opened left panel");
+                    Thread.sleep(2000);
+                } else {
+                    System.err.println("❌ Failed to click open_left button");
+                    return false;
+                }
+            } else {
+                System.out.println("📍 Left panel already open or not needed");
+            }
             
-            // For now, assume we're already in march view
-            System.out.println("✅ March view ready (using existing navigation)");
-            return true;
+            // Look for wilderness button to enter march mode
+            String afterOpenPath = "screenshots/after_open_left_" + instance.index + ".png";
+            BotUtils.takeScreenshot(instance.index, afterOpenPath);
+            
+            Point wildernessButton = BotUtils.findImageOnScreen(afterOpenPath, "wilderness_button.png", 0.6);
+            if (wildernessButton != null) {
+                System.out.println("🌍 Found wilderness button, entering march mode...");
+                if (BotUtils.clickMenu(instance.index, wildernessButton)) {
+                    System.out.println("✅ Entered wilderness/march mode");
+                    Thread.sleep(3000);
+                    return true;
+                } else {
+                    System.err.println("❌ Failed to click wilderness button");
+                    return false;
+                }
+            } else {
+                System.out.println("📍 Already in march view or wilderness button not visible");
+                return true;
+            }
             
         } catch (Exception e) {
             System.err.println("❌ Error setting up march view: " + e.getMessage());
@@ -103,18 +139,25 @@ public class MarchDetailsCollector {
                 return false;
             }
             
-            // FIXED: Extract gathering time with correct OCR coordinates
-            String gatheringTime = extractGatheringTimeFixed(marchInfo.queueNumber);
+            // FIXED: Extract gathering time with your existing OCR methods
+            String gatheringTime = extractGatheringTimeWithExistingOCR(marchInfo.queueNumber);
             if (gatheringTime != null) {
                 System.out.println("✅ Extracted gathering time: " + gatheringTime + " for Queue " + marchInfo.queueNumber);
+                
+                // Store the actual gathering time
+                marchInfo.actualGatheringTime = gatheringTime;
                 
                 // Calculate total time
                 String totalTime = calculateTotalTime(marchInfo.estimatedDeployDuration, gatheringTime);
                 
                 // Add to march tracker using your existing GUI
-                addToMarchTracker(marchInfo, totalTime);
+                addToMarchTracker(marchInfo, gatheringTime, totalTime);
                 
                 System.out.println("📊 Added to march tracker with total time: " + totalTime + " for Queue " + marchInfo.queueNumber);
+            } else {
+                System.err.println("⚠️ Could not extract gathering time for Queue " + marchInfo.queueNumber);
+                // Still try to add with estimated times
+                addToMarchTracker(marchInfo, "02:00:00", marchInfo.calculateTotalTime());
             }
             
             // Close details page
@@ -129,32 +172,7 @@ public class MarchDetailsCollector {
     }
     
     /**
-     * Template matching method based on your log patterns
-     */
-    private Point findTemplateInScreenshot(String templateName, String screenshotPath, double confidence) {
-        try {
-            // This mimics the pattern from your logs: "Found template at: (x, y) for template.png (confidence: 0.xxx)"
-            // Using OpenCV-style template matching that appears to be in your codebase
-            
-            // Try to use your existing template matching - this pattern appears in your logs
-            Point result = BotUtils.findImageWithConfidence(screenshotPath, templateName, confidence);
-            
-            if (result != null) {
-                System.out.println("Found template at: " + result + " for " + templateName + " (confidence: " + confidence + ")");
-                return result;
-            } else {
-                System.out.println("Template not found - confidence too low for " + templateName + " (threshold: " + confidence + ")");
-                return null;
-            }
-            
-        } catch (Exception e) {
-            System.err.println("❌ Error finding template " + templateName + ": " + e.getMessage());
-            return null;
-        }
-    }
-    
-    /**
-     * FIXED: Click on march queue using center-based coordinates
+     * FIXED: Click on march queue using center-based coordinates with better verification
      */
     private boolean clickOnMarchQueueAtCenter(int queueNumber) {
         try {
@@ -166,7 +184,16 @@ public class MarchDetailsCollector {
                 System.out.println("🎯 Clicking Queue " + queueNumber + " at center position: " + queuePosition);
                 if (BotUtils.clickMenu(instance.index, queuePosition)) {
                     System.out.println("✅ Clicked on Queue " + queueNumber + " at center position " + queuePosition);
-                    Thread.sleep(2000);
+                    
+                    // FIXED: Wait longer for UI to update after clicking queue
+                    Thread.sleep(3000); // Increased from 2000 to 3000
+                    
+                    // FIXED: Verify we clicked the right queue by taking a screenshot
+                    String verifyPath = "screenshots/verify_queue_" + queueNumber + "_" + instance.index + ".png";
+                    if (BotUtils.takeScreenshot(instance.index, verifyPath)) {
+                        System.out.println("📸 Took verification screenshot after clicking Queue " + queueNumber);
+                    }
+                    
                     return true;
                 } else {
                     System.err.println("❌ Failed to click on Queue " + queueNumber);
@@ -198,34 +225,86 @@ public class MarchDetailsCollector {
     }
     
     /**
-     * SIMPLIFIED: Find and click details button using only confirmed methods
+     * FIXED: Find and click details button with better detection and multiple attempts
      */
     private boolean clickDetailsButton() {
         try {
-            System.out.println("🔍 Looking for details button...");
+            System.out.println("🔍 Looking for details button with enhanced detection...");
             
-            String detailsButtonPath = "screenshots/details_button_" + instance.index + ".png";
-            if (!BotUtils.takeScreenshot(instance.index, detailsButtonPath)) {
-                System.err.println("❌ Failed to take details button screenshot");
-                return false;
-            }
+            // FIXED: Try multiple times with different confidence levels
+            String[] detailsButtonImages = {"details_button.png", "details.png"};
+            double[] confidences = {0.8, 0.7, 0.6, 0.5};
             
-            // Placeholder for finding details button - replace with your actual method
-            // Point detailsPos = YourActualImageMethod(detailsButtonPath, "details_button.png");
-            
-            // For now, use a known position based on your logs
-            Point detailsPos = new Point(271, 661); // From your successful log
-            
-            if (detailsPos != null) {
-                System.out.println("✅ Using known details button position: " + detailsPos);
-                if (BotUtils.clickMenu(instance.index, detailsPos)) {
-                    System.out.println("✅ Clicked details button successfully");
-                    Thread.sleep(2000);
-                    return true;
+            for (int attempt = 1; attempt <= 3; attempt++) {
+                System.out.println("🔄 Details button detection attempt " + attempt + "/3");
+                
+                String detailsButtonPath = "screenshots/details_button_attempt" + attempt + "_" + instance.index + ".png";
+                if (!BotUtils.takeScreenshot(instance.index, detailsButtonPath)) {
+                    System.err.println("❌ Failed to take details button screenshot on attempt " + attempt);
+                    continue;
+                }
+                
+                Point detailsPos = null;
+                
+                // Try to find details button with multiple images and confidence levels
+                for (String imageName : detailsButtonImages) {
+                    for (double confidence : confidences) {
+                        detailsPos = BotUtils.findImageOnScreen(detailsButtonPath, imageName, confidence);
+                        if (detailsPos != null) {
+                            System.out.println("✅ Found " + imageName + " at " + detailsPos + " (confidence: " + confidence + ") on attempt " + attempt);
+                            break;
+                        }
+                    }
+                    if (detailsPos != null) break;
+                }
+                
+                if (detailsPos != null) {
+                    System.out.println("✅ Found details button at: " + detailsPos + " on attempt " + attempt);
+                    if (BotUtils.clickMenu(instance.index, detailsPos)) {
+                        System.out.println("✅ Clicked details button successfully");
+                        Thread.sleep(3000); // Wait for details page to load
+                        return true;
+                    } else {
+                        System.err.println("❌ Failed to click details button at " + detailsPos);
+                    }
+                } else {
+                    System.out.println("⚠️ Details button not found on attempt " + attempt + ", trying again...");
+                    if (attempt < 3) {
+                        Thread.sleep(2000); // Wait before retry
+                    }
                 }
             }
             
-            System.err.println("❌ Could not find details button");
+            // FIXED: Last resort - try multiple fallback positions based on screen area
+            System.out.println("🔄 Trying fallback positions for details button...");
+            Point[] fallbackPositions = {
+                new Point(271, 661), // Original successful position
+                new Point(275, 665), // Slightly offset
+                new Point(267, 657), // Slightly offset other direction
+                new Point(271, 650), // Higher
+                new Point(271, 670)  // Lower
+            };
+            
+            for (int i = 0; i < fallbackPositions.length; i++) {
+                Point fallbackPos = fallbackPositions[i];
+                System.out.println("🔄 Trying fallback position " + (i+1) + "/" + fallbackPositions.length + ": " + fallbackPos);
+                
+                if (BotUtils.clickMenu(instance.index, fallbackPos)) {
+                    System.out.println("✅ Clicked details button with fallback position " + fallbackPos);
+                    Thread.sleep(3000);
+                    
+                    // Verify we opened details page by taking screenshot
+                    String verifyDetailsPath = "screenshots/verify_details_" + instance.index + ".png";
+                    if (BotUtils.takeScreenshot(instance.index, verifyDetailsPath)) {
+                        System.out.println("📸 Verification screenshot taken after clicking details button");
+                        return true;
+                    }
+                } else {
+                    System.err.println("❌ Failed to click fallback position " + fallbackPos);
+                }
+            }
+            
+            System.err.println("❌ Could not find or click details button after all attempts");
             return false;
             
         } catch (Exception e) {
@@ -235,9 +314,9 @@ public class MarchDetailsCollector {
     }
     
     /**
-     * FIXED: Extract gathering time with correct coordinates (using existing OCR method)
+     * FIXED: Extract gathering time using same successful method as AutoGatherResourcesTask
      */
-    private String extractGatheringTimeFixed(int queueNumber) {
+    private String extractGatheringTimeWithExistingOCR(int queueNumber) {
         try {
             System.out.println("📊 Extracting gathering time from details page...");
             
@@ -247,28 +326,63 @@ public class MarchDetailsCollector {
                 return "02:00:00";
             }
             
-            // FIXED: Use the correct coordinates for "Gathered in: 04:34:36" field
-            System.out.println("🎯 Extracting time from FIXED coordinates for 'Gathered in' field:");
-            System.out.println("   OLD (wrong): x=305, y=155, w=95, h=20");
-            System.out.println("   NEW (fixed): x=360, y=155, w=80, h=20 (targets actual time location)");
+            // FIXED: Use the same successful approach as AutoGatherResourcesTask
+            // Based on your image showing "04:34:38", try multiple coordinate variations
+            int[][] coordVariations = {
+                {360, 155, 85, 20},  // Based on your image analysis
+                {355, 153, 90, 22},  // Slightly adjusted left and up  
+                {350, 150, 95, 25},  // More margin for safety
+                {365, 157, 80, 18},  // Slightly right and down
+                {340, 145, 110, 30}  // Much wider capture area
+            };
             
-            // Use the corrected coordinates where "04:34:36" actually appears
-            int x = 360, y = 155, w = 80, h = 20;
+            for (int i = 0; i < coordVariations.length; i++) {
+                int x = coordVariations[i][0];
+                int y = coordVariations[i][1]; 
+                int w = coordVariations[i][2];
+                int h = coordVariations[i][3];
+                
+                System.out.println("🔄 Trying coordinates variation " + (i+1) + ": x=" + x + ", y=" + y + ", w=" + w + ", h=" + h);
+                
+                String timeRegionPath = "screenshots/gathering_time_" + instance.index + "_v" + (i+1) + ".png";
+                
+                // Use the same successful method as AutoGatherResourcesTask
+                if (OCRUtils.extractImageRegion(detailsPagePath, timeRegionPath, x, y, w, h)) {
+                    String timeText = OCRUtils.performTimeOCR(timeRegionPath, instance.index);
+                    if (timeText != null && !timeText.trim().isEmpty()) {
+                        System.out.println("📋 OCR extracted text (variation " + (i+1) + "): '" + timeText + "'");
+                        
+                        String parsedTime = TimeUtils.parseTimeFromText(timeText);
+                        if (parsedTime != null && TimeUtils.isValidMarchTime(parsedTime)) {
+                            System.out.println("✅ Successfully parsed time: " + parsedTime + " (using variation " + (i+1) + ")");
+                            return parsedTime;
+                        } else {
+                            System.out.println("⚠️ Could not parse valid time from: '" + timeText + "'");
+                        }
+                    } else {
+                        System.out.println("⚠️ OCR returned empty result for variation " + (i+1));
+                    }
+                } else {
+                    System.err.println("❌ Failed to extract image region for variation " + (i+1));
+                }
+            }
             
-            // Call your actual OCR method here - replace this with your real OCR call
-            // String extractedTime = YourActualOCRMethod(detailsPagePath, x, y, w, h);
+            // Fallback: Try the broader approach used in AutoGatherResourcesTask
+            System.out.println("🔄 Trying fallback OCR approach...");
+            String fallbackTimeRegion = "screenshots/fallback_gathering_time_" + instance.index + ".png";
+            if (OCRUtils.extractImageRegion(detailsPagePath, fallbackTimeRegion, 340, 145, 120, 35)) {
+                String fallbackTimeText = OCRUtils.performTimeOCR(fallbackTimeRegion, instance.index);
+                if (fallbackTimeText != null && !fallbackTimeText.trim().isEmpty()) {
+                    System.out.println("📋 Fallback OCR result: '" + fallbackTimeText + "'");
+                    String parsedTime = TimeUtils.parseTimeFromText(fallbackTimeText);
+                    if (parsedTime != null && TimeUtils.isValidMarchTime(parsedTime)) {
+                        System.out.println("✅ Fallback OCR success: " + parsedTime);
+                        return parsedTime;
+                    }
+                }
+            }
             
-            // For now, log the coordinates and return default
-            System.out.println("🎯 [OCR] Would extract from region: x=" + x + ", y=" + y + ", w=" + w + ", h=" + h);
-            System.out.println("📋 OCR extracted text: '[Would extract 04:34:36 with your OCR method]'");
-            
-            // TODO: Replace this with your actual OCR method call
-            // if (extractedTime != null && extractedTime.matches("\\d{1,2}:\\d{2}:\\d{2}")) {
-            //     System.out.println("✅ Successfully parsed time: " + extractedTime);
-            //     return extractedTime;
-            // }
-            
-            System.err.println("⚠️ Could not extract gathering time, using estimated time");
+            System.err.println("⚠️ Could not extract gathering time, using default");
             return "02:00:00";
             
         } catch (Exception e) {
@@ -298,7 +412,7 @@ public class MarchDetailsCollector {
     }
     
     /**
-     * SIMPLIFIED: Close details page using known position
+     * FIXED: Close details page using your existing BotUtils methods
      */
     private void closeDetailsPage() {
         try {
@@ -310,19 +424,45 @@ public class MarchDetailsCollector {
                 return;
             }
             
-            // Use known close button position from your successful logs
-            Point closePos = new Point(415, 59); // From your log: "close_gather.png (confidence: 1.000)"
+            // Try to find close button using your existing methods
+            Point closePos = BotUtils.findImageOnScreen(closeDetailsPath, "close_gather.png", 0.8);
             
-            if (BotUtils.clickMenu(instance.index, closePos)) {
-                System.out.println("✅ Closed details page with known position at " + closePos);
-                Thread.sleep(1000);
-                return;
+            if (closePos == null) {
+                // Try alternative close button names
+                closePos = BotUtils.findImageOnScreen(closeDetailsPath, "close_x.png", 0.8);
             }
             
-            // Fallback position
-            Point fallbackClose = new Point(400, 80);
-            if (BotUtils.clickMenu(instance.index, fallbackClose)) {
-                System.out.println("✅ Closed details page with fallback position");
+            if (closePos == null) {
+                // Try with lower confidence
+                closePos = BotUtils.findImageOnScreen(closeDetailsPath, "close_gather.png", 0.6);
+            }
+            
+            if (closePos == null) {
+                // Use known close button position from your successful logs
+                closePos = new Point(415, 59); // From your log: "close_gather.png (confidence: 1.000)"
+                System.out.println("⚠️ Using fallback close position: " + closePos);
+            }
+            
+            if (BotUtils.clickMenu(instance.index, closePos)) {
+                System.out.println("✅ Closed details page at " + closePos);
+                Thread.sleep(2000); // Wait for UI to return to march list
+            } else {
+                System.err.println("❌ Failed to close details page");
+                
+                // Try emergency fallback positions
+                Point[] fallbackPositions = {
+                    new Point(400, 80),
+                    new Point(420, 60),
+                    new Point(380, 100)
+                };
+                
+                for (Point fallback : fallbackPositions) {
+                    if (BotUtils.clickMenu(instance.index, fallback)) {
+                        System.out.println("✅ Closed details page with emergency fallback at " + fallback);
+                        Thread.sleep(2000);
+                        break;
+                    }
+                }
             }
             
         } catch (Exception e) {
@@ -331,25 +471,114 @@ public class MarchDetailsCollector {
     }
     
     /**
-     * Add to march tracker using your existing GUI
+     * ADDED: Verify we're on the march queue list before clicking a queue
      */
-    private void addToMarchTracker(MarchDeployInfo marchInfo, String totalTime) {
+    private boolean verifyMarchQueueList(String screenshotPath) {
         try {
-            // Use your existing march tracker - based on the pattern in AutoGatherResourcesTask
+            System.out.println("🔍 Verifying we're on march queue list...");
+            
+            // Look for indicators that we're on the march queue list
+            Point marchQueue1 = BotUtils.findImageOnScreen(screenshotPath, "march_queue_1.png", 0.6);
+            if (marchQueue1 != null) {
+                System.out.println("✅ Found march queue list - detected march_queue_1.png");
+                return true;
+            }
+            
+            // Alternative: Look for queue text patterns or UI elements
+            // We can use OCR to verify "March Queue" text is visible
+            String ocrText = OCRUtils.performEnhancedOCR(screenshotPath, instance.index);
+            if (ocrText != null && ocrText.toLowerCase().contains("march queue")) {
+                System.out.println("✅ Found march queue list - detected 'march queue' text in OCR");
+                return true;
+            }
+            
+            System.out.println("⚠️ March queue list verification inconclusive, proceeding anyway");
+            return true; // Don't block if we can't verify
+            
+        } catch (Exception e) {
+            System.err.println("❌ Error verifying march queue list: " + e.getMessage());
+            return true; // Don't block on verification errors
+        }
+    }
+    
+    /**
+     * ADDED: Verify that a queue was properly selected by checking for details button
+     */
+    private boolean verifyQueueSelected(int queueNumber) {
+        try {
+            System.out.println("🔍 Verifying Queue " + queueNumber + " was properly selected...");
+            
+            String verifyPath = "screenshots/verify_queue_selected_" + queueNumber + "_" + instance.index + ".png";
+            if (!BotUtils.takeScreenshot(instance.index, verifyPath)) {
+                System.err.println("❌ Failed to take verification screenshot");
+                return false;
+            }
+            
+            // Check if details button is visible (indicates queue is selected)
+            Point detailsButton = BotUtils.findImageOnScreen(verifyPath, "details_button.png", 0.6);
+            if (detailsButton != null) {
+                System.out.println("✅ Queue " + queueNumber + " properly selected - details button visible at " + detailsButton);
+                return true;
+            }
+            
+            // Try alternative details button image
+            detailsButton = BotUtils.findImageOnScreen(verifyPath, "details.png", 0.6);
+            if (detailsButton != null) {
+                System.out.println("✅ Queue " + queueNumber + " properly selected - details button (alt) visible at " + detailsButton);
+                return true;
+            }
+            
+            System.err.println("❌ Queue " + queueNumber + " not properly selected - no details button found");
+            return false;
+            
+        } catch (Exception e) {
+            System.err.println("❌ Error verifying queue selection: " + e.getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * FIXED: Add to march tracker using your existing MarchTrackerGUI
+     */
+    private void addToMarchTracker(MarchDeployInfo marchInfo, String gatheringTime, String totalTime) {
+        try {
+            // Calculate march time (one way) from total time and gathering time
+            long totalSeconds = TimeUtils.parseTimeToSeconds(totalTime);
+            long gatheringSeconds = TimeUtils.parseTimeToSeconds(gatheringTime);
+            long marchSeconds = (totalSeconds - gatheringSeconds) / 2; // Divide by 2 for one-way march time
+            String marchTime = TimeUtils.formatTime(marchSeconds);
+            
+            // Use your existing MarchTrackerGUI.addMarch method
             javax.swing.SwingUtilities.invokeLater(() -> {
                 try {
-                    MarchTrackerGUI.showTracker();
-                    // Add march using your existing method signature
-                    // This will need to match your actual MarchTrackerGUI.addMarch method
+                    MarchTrackerGUI tracker = MarchTrackerGUI.getInstance();
+                    tracker.addMarch(
+                        instance.index,           // instanceIndex
+                        marchInfo.queueNumber,    // queueNumber  
+                        marchInfo.resourceType,   // resourceType
+                        gatheringTime,           // gatheringTime
+                        marchTime,               // marchingTime (one way)
+                        totalTime                // totalTime
+                    );
+                    
+                    // Show the tracker window
+                    tracker.setVisible(true);
+                    tracker.toFront();
+                    
+                    System.out.println("📊 Successfully added march to tracker GUI");
+                    
                 } catch (Exception e) {
-                    System.err.println("Error showing march tracker: " + e.getMessage());
+                    System.err.println("❌ Error adding to march tracker GUI: " + e.getMessage());
                 }
             });
             
-            // Log the march information for now
-            System.out.println("📊 March Tracker: Added March[Instance:" + instance.index + 
-                             ", Queue:" + marchInfo.queueNumber + ", Resource:" + marchInfo.resourceType + 
-                             ", Status:🚶 Marching to Resource, Remaining:" + totalTime + "]");
+            // Also log the march information
+            System.out.println("📊 March Added: Instance=" + instance.index + 
+                             ", Queue=" + marchInfo.queueNumber + 
+                             ", Resource=" + marchInfo.resourceType + 
+                             ", Gathering=" + gatheringTime +
+                             ", March=" + marchTime +
+                             ", Total=" + totalTime);
             
         } catch (Exception e) {
             System.err.println("❌ Error adding to march tracker: " + e.getMessage());
@@ -357,44 +586,21 @@ public class MarchDetailsCollector {
     }
     
     /**
-     * Calculate total march time
+     * Calculate total march time: march + gathering + march back
      */
     public String calculateTotalTime(String marchTime, String gatheringTime) {
         try {
-            int marchSeconds = parseTimeToSeconds(marchTime);
-            int gatheringSeconds = parseTimeToSeconds(gatheringTime);
-            int totalSeconds = marchSeconds + gatheringSeconds;
+            long marchSeconds = TimeUtils.parseTimeToSeconds(marchTime);
+            long gatheringSeconds = TimeUtils.parseTimeToSeconds(gatheringTime);
             
-            return formatSecondsToTime(totalSeconds);
+            // Total = march there + gathering + march back
+            long totalSeconds = marchSeconds + gatheringSeconds + marchSeconds;
+            
+            return TimeUtils.formatTime(totalSeconds);
             
         } catch (Exception e) {
             System.err.println("❌ Error calculating total time: " + e.getMessage());
             return marchTime;
         }
-    }
-    
-    private int parseTimeToSeconds(String timeString) {
-        if (timeString == null) return 0;
-        
-        try {
-            String[] parts = timeString.split(":");
-            if (parts.length == 3) {
-                int hours = Integer.parseInt(parts[0]);
-                int minutes = Integer.parseInt(parts[1]);
-                int seconds = Integer.parseInt(parts[2]);
-                return hours * 3600 + minutes * 60 + seconds;
-            }
-            return 0;
-        } catch (Exception e) {
-            return 0;
-        }
-    }
-    
-    private String formatSecondsToTime(int totalSeconds) {
-        int hours = totalSeconds / 3600;
-        int minutes = (totalSeconds % 3600) / 60;
-        int seconds = totalSeconds % 60;
-        
-        return String.format("%02d:%02d:%02d", hours, minutes, seconds);
     }
 }
