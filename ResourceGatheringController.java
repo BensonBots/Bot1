@@ -3,8 +3,8 @@ package newgame;
 import java.awt.Point;
 
 /**
- * Handles the UI interactions for starting resource gathering marches
- * Separated from main task for better code organization
+ * SPEED OPTIMIZED: Handles the UI interactions for starting resource gathering marches
+ * Much faster execution with reduced delays and optimized timing
  */
 public class ResourceGatheringController {
     private final MemuInstance instance;
@@ -17,25 +17,25 @@ public class ResourceGatheringController {
     }
     
     /**
-     * Start the first march with full navigation sequence
+     * SPEED OPTIMIZED: Start the first march with faster navigation sequence
      */
-    public boolean startFirstMarch(String resourceType, int queueNumber) {
+    public boolean startFirstMarchFast(String resourceType, int queueNumber) {
         try {
-            System.out.println("🚀 Starting FIRST march for " + resourceType + " on queue " + queueNumber);
+            System.out.println("🚀 Starting FIRST march for " + resourceType + " on queue " + queueNumber + " (FAST MODE)");
             
             System.out.println("📍 After march queue, we're in TOWN view - need to click world_icon");
             
-            if (!navigator.clickWorldIcon()) {
+            if (!navigator.clickWorldIconFast()) {
                 System.err.println("❌ Failed to click world_icon to enter world view");
                 return false;
             }
             
-            if (!navigator.verifyWorldViewWithTownIcon()) {
+            if (!navigator.verifyWorldViewWithTownIconFast()) {
                 System.err.println("❌ Failed to verify world view after clicking world_icon");
                 return false;
             }
             
-            return executeGatheringSequence(resourceType, queueNumber);
+            return executeGatheringSequenceFast(resourceType, queueNumber);
             
         } catch (Exception e) {
             System.err.println("❌ Error starting first march: " + e.getMessage());
@@ -44,16 +44,16 @@ public class ResourceGatheringController {
     }
     
     /**
-     * Start subsequent march (already in world view)
+     * SPEED OPTIMIZED: Start subsequent march (already in world view)
      */
-    public boolean startSubsequentMarch(String resourceType, int queueNumber) {
+    public boolean startSubsequentMarchFast(String resourceType, int queueNumber) {
         try {
-            System.out.println("🔄 Starting SUBSEQUENT march for " + resourceType + " on queue " + queueNumber);
+            System.out.println("🔄 Starting SUBSEQUENT march for " + resourceType + " on queue " + queueNumber + " (FAST MODE)");
             System.out.println("✅ We remain in WORLD view after previous deploy - no navigation needed");
             
-            Thread.sleep(3000); // Let UI settle
+            Thread.sleep(1500); // SPEED: 3s → 1.5s
             
-            return executeGatheringSequence(resourceType, queueNumber);
+            return executeGatheringSequenceFast(resourceType, queueNumber);
             
         } catch (Exception e) {
             System.err.println("❌ Error in subsequent march: " + e.getMessage());
@@ -62,69 +62,69 @@ public class ResourceGatheringController {
     }
     
     /**
-     * Execute the gathering sequence (search → select → deploy)
+     * SPEED OPTIMIZED: Execute the gathering sequence (search → select → deploy)
      */
-    private boolean executeGatheringSequence(String resourceType, int queueNumber) {
+    private boolean executeGatheringSequenceFast(String resourceType, int queueNumber) {
         try {
-            if (!clickSearchIconSimplified()) {
+            if (!clickSearchIconSimplifiedFast()) {
                 System.err.println("❌ Failed to click search icon");
                 return false;
             }
             
-            if (!scrollToRevealResources()) {
+            if (!scrollToRevealResourcesFast()) {
                 System.err.println("❌ Failed to scroll to reveal resources");
                 return false;
             }
             
-            if (!selectResourceIcon(resourceType)) {
+            if (!selectResourceIconFast(resourceType)) {
                 System.err.println("❌ Failed to select " + resourceType + " icon");
                 return false;
             }
             
-            if (!setMaxLevel()) {
+            if (!setMaxLevelFast()) {
                 System.err.println("❌ Failed to set max level");
                 return false;
             }
             
-            if (!searchForAvailableResource()) {
+            if (!searchForAvailableResourceFast()) {
                 System.err.println("❌ Failed to find available resource at any level");
                 return false;
             }
             
-            if (!deployMarchWithTimeExtraction()) {
+            if (!deployMarchWithTimeExtractionFast()) {
                 System.err.println("❌ Failed to deploy march");
                 return false;
             }
             
-            System.out.println("✅ Successfully started " + resourceType + " march on queue " + queueNumber);
+            System.out.println("✅ Successfully started " + resourceType + " march on queue " + queueNumber + " (FAST MODE)");
             return true;
             
         } catch (Exception e) {
-            System.err.println("❌ Error in gathering sequence: " + e.getMessage());
+            System.err.println("❌ Error in fast gathering sequence: " + e.getMessage());
             return false;
         }
     }
     
     /**
-     * Click search icon using known position
+     * SPEED OPTIMIZED: Click search icon using known position
      */
-    private boolean clickSearchIconSimplified() {
+    private boolean clickSearchIconSimplifiedFast() {
         try {
-            System.out.println("🔍 Clicking search button (simplified - using known position)...");
+            System.out.println("🔍 Clicking search button (FAST - using known position)...");
             
             Point searchButton = new Point(31, 535);
             System.out.println("✅ Using known working search button position: " + searchButton);
             
             if (BotUtils.clickMenu(instance.index, searchButton)) {
                 System.out.println("✅ Successfully clicked search button at " + searchButton);
-                Thread.sleep(3000);
+                Thread.sleep(1500); // SPEED: 3s → 1.5s
                 
-                if (!dismissSearchPopup()) {
+                if (!dismissSearchPopupFast()) {
                     System.err.println("❌ Failed to dismiss search popup");
                     return false;
                 }
                 
-                if (!verifyResourceSelectionScreen()) {
+                if (!verifyResourceSelectionScreenFast()) {
                     System.err.println("❌ Not on resource selection screen after search click");
                     return false;
                 }
@@ -136,22 +136,22 @@ public class ResourceGatheringController {
             }
             
         } catch (Exception e) {
-            System.err.println("❌ Error in simplified search click: " + e.getMessage());
+            System.err.println("❌ Error in fast search click: " + e.getMessage());
             return false;
         }
     }
     
     /**
-     * Dismiss the search popup
+     * SPEED OPTIMIZED: Dismiss the search popup
      */
-    private boolean dismissSearchPopup() {
+    private boolean dismissSearchPopupFast() {
         try {
-            System.out.println("🚫 Dismissing search popup by clicking bottom left area...");
+            System.out.println("🚫 Dismissing search popup by clicking bottom left area (FAST)...");
             
             Point dismissArea = new Point(50, 750);
             if (BotUtils.clickMenu(instance.index, dismissArea)) {
                 System.out.println("✅ Clicked bottom left area to dismiss popup at " + dismissArea);
-                Thread.sleep(2000);
+                Thread.sleep(1000); // SPEED: 2s → 1s
                 return true;
             } else {
                 System.err.println("❌ Failed to click bottom left area to dismiss popup");
@@ -165,11 +165,11 @@ public class ResourceGatheringController {
     }
     
     /**
-     * Verify we're on the resource selection screen
+     * SPEED OPTIMIZED: Verify we're on the resource selection screen
      */
-    private boolean verifyResourceSelectionScreen() {
+    private boolean verifyResourceSelectionScreenFast() {
         try {
-            System.out.println("🔍 Verifying we're on resource selection screen...");
+            System.out.println("🔍 Verifying we're on resource selection screen (FAST)...");
             
             String verifyPath = "screenshots/verify_resource_screen_" + instance.index + ".png";
             if (!BotUtils.takeScreenshot(instance.index, verifyPath)) {
@@ -199,18 +199,18 @@ public class ResourceGatheringController {
     }
     
     /**
-     * Scroll to reveal all resource options
+     * SPEED OPTIMIZED: Scroll to reveal all resource options
      */
-    private boolean scrollToRevealResources() {
+    private boolean scrollToRevealResourcesFast() {
         try {
-            System.out.println("📜 Scrolling to reveal all resources...");
+            System.out.println("📜 Scrolling to reveal all resources (FAST)...");
             
             Point startPoint = new Point(400, 570);
             Point endPoint = new Point(80, 570);
             
             if (BotUtils.performADBSwipe(instance.index, startPoint, endPoint)) {
                 System.out.println("✅ Successfully scrolled from " + startPoint + " to " + endPoint);
-                Thread.sleep(2000);
+                Thread.sleep(1000); // SPEED: 2s → 1s
                 return true;
             } else {
                 System.err.println("❌ ADB swipe failed");
@@ -224,11 +224,11 @@ public class ResourceGatheringController {
     }
     
     /**
-     * Select the specified resource icon
+     * SPEED OPTIMIZED: Select the specified resource icon
      */
-    private boolean selectResourceIcon(String resourceType) {
+    private boolean selectResourceIconFast(String resourceType) {
         try {
-            System.out.println("🎯 Selecting " + resourceType + " icon...");
+            System.out.println("🎯 Selecting " + resourceType + " icon (FAST)...");
             
             String screenPath = "screenshots/select_resource_" + instance.index + ".png";
             if (!BotUtils.takeScreenshot(instance.index, screenPath)) {
@@ -242,7 +242,8 @@ public class ResourceGatheringController {
                 return false;
             }
             
-            double[] confidences = {0.8, 0.7, 0.6, 0.5, 0.4};
+            // SPEED: Check fewer confidence levels, start with lower confidence
+            double[] confidences = {0.6, 0.5, 0.4}; // SPEED: Reduced from 5 to 3 levels
             Point resourceIcon = null;
             
             for (double confidence : confidences) {
@@ -257,7 +258,7 @@ public class ResourceGatheringController {
                 Point clickPoint = new Point(resourceIcon.x + 40, resourceIcon.y + 35);
                 if (BotUtils.clickMenu(instance.index, clickPoint)) {
                     System.out.println("✅ Successfully clicked " + resourceType + " icon at " + clickPoint);
-                    Thread.sleep(3000);
+                    Thread.sleep(1500); // SPEED: 3s → 1.5s
                     return true;
                 }
             } else {
@@ -287,22 +288,23 @@ public class ResourceGatheringController {
     }
     
     /**
-     * Set resource level to maximum
+     * SPEED OPTIMIZED: Set resource level to maximum
      */
-    private boolean setMaxLevel() {
+    private boolean setMaxLevelFast() {
         try {
-            System.out.println("📈 Setting resource level to maximum...");
+            System.out.println("📈 Setting resource level to maximum (FAST)...");
             
             String levelPath = "screenshots/level_max_" + instance.index + ".png";
             BotUtils.takeScreenshot(instance.index, levelPath);
             
             Point plusButton = BotUtils.findImageOnScreen(levelPath, "plus_button.png", 0.7);
             if (plusButton != null) {
+                // SPEED: Faster clicking with shorter delays
                 for (int i = 0; i < 8; i++) {
                     BotUtils.clickMenu(instance.index, plusButton);
-                    Thread.sleep(200);
+                    Thread.sleep(100); // SPEED: 200ms → 100ms
                 }
-                System.out.println("✅ Set to maximum resource level (clicked plus 8 times)");
+                System.out.println("✅ Set to maximum resource level (clicked plus 8 times, FAST)");
                 return true;
             } else {
                 System.err.println("❌ Could not find plus_button");
@@ -316,29 +318,29 @@ public class ResourceGatheringController {
     }
     
     /**
-     * Search for available resources at different levels
+     * SPEED OPTIMIZED: Search for available resources at different levels
      */
-    private boolean searchForAvailableResource() {
+    private boolean searchForAvailableResourceFast() {
         try {
-            System.out.println("🔍 Searching for available resources...");
+            System.out.println("🔍 Searching for available resources (FAST)...");
             
             for (int level = 8; level >= 1; level--) {
-                System.out.println("🎯 Searching at level " + level + "...");
+                System.out.println("🎯 Searching at level " + level + " (FAST)...");
                 
-                if (!clickSearchResourceButton()) {
+                if (!clickSearchResourceButtonFast()) {
                     continue;
                 }
                 
-                Thread.sleep(4000);
+                Thread.sleep(2000); // SPEED: 4s → 2s
                 
-                if (checkForGatherButton()) {
+                if (checkForGatherButtonFast()) {
                     System.out.println("✅ Found available resource at level " + level);
                     return true;
                 }
                 
                 if (level > 1) {
                     System.out.println("❌ No resource at level " + level + ", reducing to " + (level - 1));
-                    if (!clickMinusButton()) {
+                    if (!clickMinusButtonFast()) {
                         System.err.println("❌ Failed to reduce level");
                         return false;
                     }
@@ -355,9 +357,9 @@ public class ResourceGatheringController {
     }
     
     /**
-     * Click the search resource button
+     * SPEED OPTIMIZED: Click the search resource button
      */
-    private boolean clickSearchResourceButton() {
+    private boolean clickSearchResourceButtonFast() {
         try {
             String searchPath = "screenshots/searchrss_" + instance.index + ".png";
             BotUtils.takeScreenshot(instance.index, searchPath);
@@ -368,7 +370,7 @@ public class ResourceGatheringController {
             }
             
             BotUtils.clickMenu(instance.index, searchButton);
-            System.out.println("✅ Clicked search resource button");
+            System.out.println("✅ Clicked search resource button (FAST)");
             return true;
             
         } catch (Exception e) {
@@ -378,9 +380,9 @@ public class ResourceGatheringController {
     }
     
     /**
-     * Check for the gather button (indicates resource is available)
+     * SPEED OPTIMIZED: Check for the gather button (indicates resource is available)
      */
-    private boolean checkForGatherButton() {
+    private boolean checkForGatherButtonFast() {
         try {
             String gatherCheckPath = "screenshots/gather_check_" + instance.index + ".png";
             BotUtils.takeScreenshot(instance.index, gatherCheckPath);
@@ -389,7 +391,7 @@ public class ResourceGatheringController {
             if (gatherButton != null) {
                 System.out.println("✅ Found gather_button - resource available");
                 BotUtils.clickMenu(instance.index, gatherButton);
-                Thread.sleep(3000);
+                Thread.sleep(1500); // SPEED: 3s → 1.5s
                 return true;
             } else {
                 System.out.println("❌ No gather_button found - resource not available");
@@ -403,9 +405,9 @@ public class ResourceGatheringController {
     }
     
     /**
-     * Click the minus button to reduce level
+     * SPEED OPTIMIZED: Click the minus button to reduce level
      */
-    private boolean clickMinusButton() {
+    private boolean clickMinusButtonFast() {
         try {
             String minusPath = "screenshots/minus_level_" + instance.index + ".png";
             BotUtils.takeScreenshot(instance.index, minusPath);
@@ -413,8 +415,8 @@ public class ResourceGatheringController {
             Point minusButton = BotUtils.findImageOnScreen(minusPath, "minus_button.png", 0.7);
             if (minusButton != null) {
                 BotUtils.clickMenu(instance.index, minusButton);
-                Thread.sleep(500);
-                System.out.println("✅ Clicked minus button to reduce level");
+                Thread.sleep(300); // SPEED: 500ms → 300ms
+                System.out.println("✅ Clicked minus button to reduce level (FAST)");
                 return true;
             } else {
                 System.err.println("❌ Could not find minus_button");
@@ -428,11 +430,11 @@ public class ResourceGatheringController {
     }
     
     /**
-     * Deploy march and extract timing information
+     * SPEED OPTIMIZED: Deploy march and extract timing information
      */
-    private boolean deployMarchWithTimeExtraction() {
+    private boolean deployMarchWithTimeExtractionFast() {
         try {
-            System.out.println("🚀 Deploying march with precise time extraction...");
+            System.out.println("🚀 Deploying march with time extraction (FAST)...");
             
             String deployPath = "screenshots/deploy_screen_" + instance.index + ".png";
             if (!BotUtils.takeScreenshot(instance.index, deployPath)) {
@@ -440,7 +442,7 @@ public class ResourceGatheringController {
                 return false;
             }
             
-            String extractedTime = extractTimeFromDeployScreen(deployPath);
+            String extractedTime = extractTimeFromDeployScreenFast(deployPath);
             if (extractedTime != null) {
                 System.out.println("⏱️ Successfully extracted march time: " + extractedTime);
             } else {
@@ -460,9 +462,9 @@ public class ResourceGatheringController {
                 
                 if (BotUtils.clickMenu(instance.index, deployButton)) {
                     System.out.println("✅ Clicked deploy button successfully");
-                    Thread.sleep(3000);
+                    Thread.sleep(1500); // SPEED: 3s → 1.5s
                     
-                    System.out.println("🎉 March deployed successfully with time: " + extractedTime);
+                    System.out.println("🎉 March deployed successfully with time: " + extractedTime + " (FAST MODE)");
                     System.out.println("📍 Remaining in world view after deploy");
                     return true;
                 } else {
@@ -481,15 +483,15 @@ public class ResourceGatheringController {
     }
     
     /**
-     * Extract time from deploy screen
+     * SPEED OPTIMIZED: Extract time from deploy screen
      */
-    private String extractTimeFromDeployScreen(String screenPath) {
+    private String extractTimeFromDeployScreenFast(String screenPath) {
         try {
-            System.out.println("⏱️ Extracting march time from deploy screen...");
+            System.out.println("⏱️ Extracting march time from deploy screen (FAST)...");
             
             String timeRegionPath = "screenshots/precise_time_" + instance.index + ".png";
             
-            // FIXED: Move further left to capture the full time including leftmost digit
+            // Extract time region with optimized coordinates
             if (OCRUtils.extractImageRegion(screenPath, timeRegionPath, 335, 713, 70, 16)) {
                 String timeText = OCRUtils.performTimeOCR(timeRegionPath, instance.index);
                 if (timeText != null && !timeText.trim().isEmpty()) {
@@ -497,7 +499,7 @@ public class ResourceGatheringController {
                     
                     String parsedTime = TimeUtils.parseTimeFromText(timeText);
                     if (parsedTime != null && TimeUtils.isValidMarchTime(parsedTime)) {
-                        System.out.println("✅ Successfully parsed time: " + parsedTime + " from deploy screen");
+                        System.out.println("✅ Successfully parsed time: " + parsedTime + " from deploy screen (FAST)");
                         return parsedTime;
                     } else {
                         System.out.println("⚠️ Could not parse valid time from: '" + timeText + "'");
@@ -519,5 +521,14 @@ public class ResourceGatheringController {
      */
     public String getLastExtractedTime() {
         return lastExtractedTime;
+    }
+    
+    // Legacy methods for compatibility - these just call the fast versions
+    public boolean startFirstMarch(String resourceType, int queueNumber) {
+        return startFirstMarchFast(resourceType, queueNumber);
+    }
+    
+    public boolean startSubsequentMarch(String resourceType, int queueNumber) {
+        return startSubsequentMarchFast(resourceType, queueNumber);
     }
 }

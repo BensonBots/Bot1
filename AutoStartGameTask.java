@@ -33,121 +33,103 @@ public class AutoStartGameTask extends javax.swing.SwingWorker<Void, String> {
         
         Main.addToConsole("🎮 " + instance.name + " launching game...");
         
+        boolean gameStarted = false;
+        
         try {
-            String screenPath = Paths.get(BotUtils.SCREENSHOTS_DIR, "resolution_check_" + instance.index + ".png").toString();
+            String screenPath = Paths.get(BotUtils.SCREENSHOTS_DIR, "game_status_check_" + instance.index + ".png").toString();
             BotUtils.createDirectoryIfNeeded(BotUtils.SCREENSHOTS_DIR);
             
-            for (int i = 0; i < attempts && !shouldStop && !isCancelled(); i++) {
+            for (int i = 0; i < attempts && !shouldStop && !isCancelled() && !gameStarted; i++) {
                 System.out.println("Game start attempt " + (i+1) + "/" + attempts + " for instance " + instance.index);
                 publish("Game start attempt " + (i+1) + "/" + attempts);
                 
-                // Take screenshot with retry logic
-                boolean screenshotSuccess = false;
-                for (int retry = 0; retry < 3; retry++) {
-                    System.out.println("Screenshot attempt " + (retry + 1) + "/3 for game start...");
-                    
-                    File existingFile = new File(screenPath);
-                    if (existingFile.exists()) {
-                        existingFile.delete();
-                        System.out.println("Deleted existing resolution_check file");
-                        try {
-                            Thread.sleep(500);
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                            break;
-                        }
-                    }
-                    
-                    if (BotUtils.takeMenuScreenshotLegacy(instance.index, screenPath)) {
-                        File screenFile = new File(screenPath);
-                        if (screenFile.exists() && screenFile.length() > 15000) {
-                            screenshotSuccess = true;
-                            System.out.println("✅ Screenshot successful: " + screenFile.length() + " bytes");
-                            break;
-                        } else {
-                            System.err.println("❌ Screenshot too small (" + 
-                                (screenFile.exists() ? screenFile.length() + " bytes" : "doesn't exist") + 
-                                "), retrying...");
-                            BotUtils.delay(2000);
-                        }
-                    } else {
-                        System.err.println("❌ Screenshot command failed, retrying...");
-                        BotUtils.delay(2000);
-                    }
-                }
-                
-                if (!screenshotSuccess) {
-                    publish("[ERROR] Screenshot failed after 3 retries (" + (i+1) + "/" + attempts + ")");
-                    System.err.println("All screenshot attempts failed, skipping this game start attempt");
+                // OPTIMIZED: Take only ONE screenshot per attempt and check everything
+                if (!takeValidScreenshot(screenPath, i + 1, attempts)) {
                     if (!BotUtils.delay(5000)) break;
                     continue;
                 }
                 
-                // Validate screenshot with OpenCV
-                if (BotUtils.isOpenCvLoaded()) {
-                    org.opencv.core.Mat testMat = org.opencv.imgcodecs.Imgcodecs.imread(screenPath);
-                    if (testMat.empty()) {
-                        System.err.println("❌ OpenCV cannot load screenshot, retrying...");
-                        testMat.release();
-                        if (!BotUtils.delay(2000)) break;
-                        continue;
-                    } else {
-                        System.out.println("✅ OpenCV validated screenshot: " + testMat.cols() + "x" + testMat.rows());
-                        testMat.release();
-                    }
-                }
+                // OPTIMIZED: Single comprehensive status check
+                GameStatusResult statusResult = performComprehensiveStatusCheck(screenPath);
                 
-                // FIXED: Check for game running indicators FIRST
-                if (checkForGameRunning(screenPath)) {
+                if (statusResult.gameRunning) {
                     Main.addToConsole("✅ " + instance.name + " game already running");
                     publish("Game already running");
                     System.out.println("Game already detected running for instance " + instance.index);
+                    gameStarted = true;
                     break;
                 }
                 
-                // Handle popups and try to start game
-                boolean gameStarted = handlePopupsAndStartGame(screenPath, i + 1, attempts);
-                
-                if (gameStarted) {
-                    Main.addToConsole("✅ " + instance.name + " game started successfully");
-                    publish("Game started successfully");
-                    break;
+                if (statusResult.popupFound) {
+                    System.out.println("🚫 Found popup, attempting to close...");
+                    if (closePopup(statusResult.popupLocation, statusResult.popupType)) {
+                        Main.addToConsole("🚫 " + instance.name + " closed popup");
+                        publish("Closed popup, retrying...");
+                        
+                        // Wait and check again after popup closure
+                        BotUtils.delay(3000);
+                        
+                        // Take new screenshot after popup closure
+                        if (takeValidScreenshot(screenPath, i + 1, attempts)) {
+                            GameStatusResult afterPopupResult = performComprehensiveStatusCheck(screenPath);
+                            if (afterPopupResult.gameRunning) {
+                                Main.addToConsole("✅ " + instance.name + " game running after popup closure");
+                                publish("Game running after popup closure");
+                                gameStarted = true;
+                                break;
+                            }
+                            
+                            // Try launcher if game not running after popup
+                            if (afterPopupResult.launcherFound) {
+                                System.out.println("🚀 Found game launcher after popup, attempting to start...");
+                                if (clickGameLauncher(afterPopupResult.launcherLocation)) {
+                                    if (waitForGameToStart()) {
+                                        Main.addToConsole("✅ " + instance.name + " game started successfully");
+                                        publish("Game started successfully");
+                                        gameStarted = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if (statusResult.launcherFound) {
+                    System.out.println("🚀 Found game launcher, attempting to start...");
+                    if (clickGameLauncher(statusResult.launcherLocation)) {
+                        if (waitForGameToStart()) {
+                            Main.addToConsole("✅ " + instance.name + " game started successfully");
+                            publish("Game started successfully");
+                            gameStarted = true;
+                            break;
+                        } else {
+                            System.err.println("❌ Game failed to start after clicking launcher");
+                            publish("Game failed to start");
+                        }
+                    } else {
+                        System.err.println("❌ Failed to click game launcher");
+                        publish("Failed to click launcher");
+                    }
+                } else {
+                    System.out.println("⚠️ No actionable elements found in screenshot");
+                    publish("No game elements found, retrying...");
                 }
                 
-                if (i < attempts - 1 && !BotUtils.delay(5000)) {
+                if (i < attempts - 1 && !gameStarted && !BotUtils.delay(5000)) {
                     break;
                 }
             }
             
-            // Final verification
-            if (!shouldStop && !isCancelled()) {
-                Main.addToConsole("🔍 " + instance.name + " verifying final game status...");
-                
-                boolean finalScreenshotSuccess = false;
-                for (int retry = 0; retry < 3; retry++) {
-                    if (BotUtils.takeMenuScreenshotLegacy(instance.index, screenPath)) {
-                        File screenFile = new File(screenPath);
-                        if (screenFile.exists() && screenFile.length() > 15000) {
-                            finalScreenshotSuccess = true;
-                            break;
-                        }
-                    }
-                    BotUtils.delay(1000);
-                }
-                
-                if (finalScreenshotSuccess) {
-                    if (checkForGameRunning(screenPath)) {
-                        Main.addToConsole("✅ " + instance.name + " game verified running");
-                        publish("Game running successfully");
-                        System.out.println("Game confirmed running for instance " + instance.index);
-                    } else {
-                        Main.addToConsole("⚠️ " + instance.name + " game status uncertain");
-                        publish("Game status uncertain");
-                    }
-                } else {
-                    Main.addToConsole("❌ " + instance.name + " final verification failed");
-                    publish("Final verification failed");
-                }
+            // Final verification if we didn't stop early and haven't confirmed game started
+            if (!shouldStop && !isCancelled() && !gameStarted) {
+                gameStarted = performFinalVerification(screenPath);
+            }
+            
+            if (gameStarted) {
+                Main.addToConsole("✅ " + instance.name + " game launch completed successfully");
+                publish("Game launch completed");
+            } else {
+                Main.addToConsole("⚠️ " + instance.name + " game launch uncertain");
+                publish("Game launch uncertain");
             }
             
         } catch (Exception e) {
@@ -166,228 +148,279 @@ public class AutoStartGameTask extends javax.swing.SwingWorker<Void, String> {
     }
 
     /**
-     * FIXED: Better game running detection
+     * OPTIMIZED: Take a valid screenshot with retry logic
      */
-    private boolean checkForGameRunning(String screenPath) {
-        try {
-            System.out.println("🔍 Checking for game running indicators...");
+    private boolean takeValidScreenshot(String screenPath, int attempt, int totalAttempts) {
+        for (int retry = 0; retry < 3; retry++) {
+            System.out.println("📸 Screenshot attempt " + (retry + 1) + "/3 for game start attempt " + attempt + "/" + totalAttempts);
             
-            // Check for world_icon.png (main game indicator)
-            Point worldIcon = BotUtils.findImageOnScreenGrayWithRetry(screenPath, "world_icon.png", 0.7, instance.index);
-            if (worldIcon != null) {
-                System.out.println("✅ Found world_icon.png at: " + worldIcon + " - Game is running!");
-                return true;
-            }
-            
-            // Check for game_icon.png (alternative indicator)
-            Point gameIcon = BotUtils.findImageOnScreenGrayWithRetry(screenPath, "game_icon.png", 0.7, instance.index);
-            if (gameIcon != null) {
-                System.out.println("✅ Found game_icon.png at: " + gameIcon + " - Game is running!");
-                return true;
-            }
-            
-            // Check for town_icon.png (indicates we're in game)
-            Point townIcon = BotUtils.findImageOnScreenGrayWithRetry(screenPath, "town_icon.png", 0.7, instance.index);
-            if (townIcon != null) {
-                System.out.println("✅ Found town_icon.png at: " + townIcon + " - Game is running!");
-                return true;
-            }
-            
-            System.out.println("❌ No game running indicators found");
-            return false;
-            
-        } catch (Exception e) {
-            System.err.println("❌ Error checking for game running: " + e.getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * FIXED: Better popup detection and game launching
-     */
-    private boolean handlePopupsAndStartGame(String screenPath, int currentAttempt, int totalAttempts) {
-        try {
-            System.out.println("🔄 Handling popups and starting game (attempt " + currentAttempt + "/" + totalAttempts + ")");
-            
-            // Step 1: Try to close any blocking popups (but be more selective)
-            boolean popupClosed = detectAndClosePopupSelective(screenPath, currentAttempt, totalAttempts);
-            
-            if (popupClosed) {
-                System.out.println("✅ Popup closed, waiting for UI to settle...");
-                BotUtils.delay(2000);
-                
-                // Take new screenshot after popup closure
-                String afterPopupPath = "screenshots/after_popup_" + instance.index + ".png";
-                if (BotUtils.takeMenuScreenshotLegacy(instance.index, afterPopupPath)) {
-                    // Check if game is now running after popup closure
-                    if (checkForGameRunning(afterPopupPath)) {
-                        System.out.println("🎉 Game is running after popup closure!");
-                        return true;
-                    }
-                    
-                    // If not running, try to click launcher
-                    System.out.println("🚀 Game not running after popup closure, looking for launcher...");
-                    return tryClickGameLauncher(afterPopupPath, currentAttempt, totalAttempts);
+            File existingFile = new File(screenPath);
+            if (existingFile.exists()) {
+                existingFile.delete();
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return false;
                 }
-            } else {
-                // No popup found, try to click launcher directly
-                System.out.println("📱 No popup detected, looking for game launcher...");
-                return tryClickGameLauncher(screenPath, currentAttempt, totalAttempts);
             }
             
-            return false;
-            
-        } catch (Exception e) {
-            System.err.println("❌ Error handling popups and starting game: " + e.getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * FIXED: More selective popup detection (avoid false positives)
-     */
-    private boolean detectAndClosePopupSelective(String screenPath, int currentAttempt, int totalAttempts) {
-        System.out.println("=== SELECTIVE POPUP DETECTION ===");
-        System.out.println("Screenshot path: " + screenPath);
-        File screenFile = new File(screenPath);
-        System.out.println("Screenshot exists: " + screenFile.exists() + ", size: " + screenFile.length() + " bytes");
-
-        // FIXED: Only look for actual popup close buttons, not UI elements
-        String[] realCloseButtons = {"close_x.png", "close_x2.png"};
-        
-        for (String closeBtn : realCloseButtons) {
-            System.out.println("\n--- Testing " + closeBtn + " ---");
-            
-            Point closeBtnLoc = BotUtils.findImageOnScreenGrayWithRetry(screenPath, closeBtn, 0.8, instance.index);
-            System.out.println(closeBtn + " result: " + closeBtnLoc);
-            
-            if (closeBtnLoc != null) {
-                // FIXED: Validate this is actually a popup close button, not just UI
-                if (isValidPopupCloseButton(closeBtnLoc, screenPath)) {
-                    System.out.println("✅ Found valid popup close button: " + closeBtn);
-                    if (performPopupClose(closeBtnLoc, closeBtn, currentAttempt, totalAttempts)) {
+            if (BotUtils.takeMenuScreenshotLegacy(instance.index, screenPath)) {
+                File screenFile = new File(screenPath);
+                if (screenFile.exists() && screenFile.length() > 15000) {
+                    System.out.println("✅ Valid screenshot: " + screenFile.length() + " bytes");
+                    
+                    // Validate with OpenCV if available
+                    if (BotUtils.isOpenCvLoaded()) {
+                        org.opencv.core.Mat testMat = org.opencv.imgcodecs.Imgcodecs.imread(screenPath);
+                        if (!testMat.empty()) {
+                            System.out.println("✅ OpenCV validated screenshot: " + testMat.cols() + "x" + testMat.rows());
+                            testMat.release();
+                            return true;
+                        } else {
+                            testMat.release();
+                            System.err.println("❌ OpenCV cannot load screenshot, retrying...");
+                        }
+                    } else {
                         return true;
                     }
                 } else {
-                    System.out.println("❌ Invalid popup location (likely UI element): " + closeBtnLoc);
+                    System.err.println("❌ Screenshot too small (" + 
+                        (screenFile.exists() ? screenFile.length() + " bytes" : "doesn't exist") + 
+                        "), retrying...");
                 }
+            } else {
+                System.err.println("❌ Screenshot command failed, retrying...");
+            }
+            
+            BotUtils.delay(2000);
+        }
+        
+        System.err.println("❌ All screenshot attempts failed for game start attempt " + attempt);
+        publish("[ERROR] Screenshot failed after 3 retries (" + attempt + "/" + totalAttempts + ")");
+        return false;
+    }
+
+    /**
+     * OPTIMIZED: Single comprehensive check for game status, popups, and launcher
+     */
+    private GameStatusResult performComprehensiveStatusCheck(String screenPath) {
+        System.out.println("🔍 Performing comprehensive game status check...");
+        
+        GameStatusResult result = new GameStatusResult();
+        
+        // Check for game running indicators FIRST (highest priority)
+        Point worldIcon = BotUtils.findImageOnScreen(screenPath, "world_icon.png", 0.7);
+        if (worldIcon != null) {
+            System.out.println("✅ Found world_icon.png - Game is running!");
+            result.gameRunning = true;
+            return result; // Early return if game is running
+        }
+        
+        Point gameIcon = BotUtils.findImageOnScreen(screenPath, "game_icon.png", 0.7);
+        if (gameIcon != null) {
+            System.out.println("✅ Found game_icon.png - Game is running!");
+            result.gameRunning = true;
+            return result; // Early return if game is running
+        }
+        
+        Point townIcon = BotUtils.findImageOnScreen(screenPath, "town_icon.png", 0.7);
+        if (townIcon != null) {
+            System.out.println("✅ Found town_icon.png - Game is running!");
+            result.gameRunning = true;
+            return result; // Early return if game is running
+        }
+        
+        // Check for popups (second priority)
+        String[] popupCloseButtons = {"close_x.png", "close_x2.png"};
+        for (String closeBtn : popupCloseButtons) {
+            Point popupLoc = BotUtils.findImageOnScreen(screenPath, closeBtn, 0.8);
+            if (popupLoc != null && isValidPopupLocation(popupLoc)) {
+                System.out.println("🚫 Found valid popup: " + closeBtn + " at " + popupLoc);
+                result.popupFound = true;
+                result.popupLocation = popupLoc;
+                result.popupType = closeBtn;
+                return result; // Return after finding first valid popup
             }
         }
         
-        System.out.println("📱 No actual popups found");
-        return false;
+        // Check for game launcher (lowest priority)
+        double[] confidences = {0.8, 0.7, 0.6, 0.5};
+        for (double confidence : confidences) {
+            Point launcher = BotUtils.findImageOnScreen(screenPath, "game_launcher.png", confidence);
+            if (launcher != null) {
+                System.out.println("🚀 Found game launcher at: " + launcher + " (confidence: " + confidence + ")");
+                result.launcherFound = true;
+                result.launcherLocation = launcher;
+                return result; // Return after finding launcher
+            }
+        }
+        
+        System.out.println("❌ No game indicators, popups, or launcher found");
+        return result;
     }
-    
+
     /**
-     * FIXED: Validate if close button is actually a popup (not just UI)
+     * IMPROVED: Validate popup location to avoid false positives but allow valid game popups
      */
-    private boolean isValidPopupCloseButton(Point location, String screenPath) {
-        // Close buttons should be in popup areas, not main UI
-        // For 480x800 resolution:
-        
-        // Reject locations that are clearly main UI elements
-        if (location.x < 50 || location.x > 430) {
-            System.out.println("❌ Close button too close to screen edge (likely UI): " + location);
+    private boolean isValidPopupLocation(Point location) {
+        // Allow reasonable popup areas within the game screen
+        if (location.x < 20 || location.x > 460) {
+            System.out.println("❌ Popup location too close to screen edge: " + location);
             return false;
         }
         
-        if (location.y < 100 || location.y > 700) {
-            System.out.println("❌ Close button too close to top/bottom (likely UI): " + location);
+        if (location.y < 50 || location.y > 750) {
+            System.out.println("❌ Popup location too close to top/bottom: " + location);
             return false;
         }
         
-        // Known false positive locations from your logs
-        if (location.x == 400 && location.y == 265) {
-            System.out.println("❌ Known false positive location: " + location);
+        // Remove overly restrictive known false positive - (417, 142) is actually valid
+        // Only filter out clearly invalid locations
+        if (location.x == 0 && location.y == 0) {
+            System.out.println("❌ Invalid zero coordinate location: " + location);
             return false;
         }
         
-        System.out.println("✅ Valid popup close button location: " + location);
+        System.out.println("✅ Valid popup location: " + location);
         return true;
     }
 
     /**
-     * FIXED: Try to click game launcher and verify if game starts
+     * OPTIMIZED: Close popup with confirmation
      */
-    private boolean tryClickGameLauncher(String screenPath, int currentAttempt, int totalAttempts) {
+    private boolean closePopup(Point popupLocation, String popupType) {
         try {
-            // Look for game launcher with multiple confidence levels
-            double[] confidences = {0.8, 0.7, 0.6, 0.5};
-            Point launcher = null;
+            System.out.println("🚫 Closing popup " + popupType + " at " + popupLocation);
             
-            for (double confidence : confidences) {
-                launcher = BotUtils.findImageOnScreenGrayWithRetry(screenPath, "game_launcher.png", confidence, instance.index);
-                if (launcher != null) {
-                    System.out.println("✅ Found game launcher at: " + launcher + " (confidence: " + confidence + ")");
-                    break;
-                }
+            if (BotUtils.clickMenu(instance.index, popupLocation)) {
+                System.out.println("✅ Successfully clicked popup close button");
+                return true;
+            } else {
+                System.err.println("❌ Failed to click popup close button");
+                return false;
             }
             
-            if (launcher != null) {
-                System.out.println("🖱️ Clicking game launcher at: " + launcher);
-                if (BotUtils.clickMenu(instance.index, launcher)) {
-                    Main.addToConsole("🚀 " + instance.name + " clicked game launcher");
-                    publish("Launched game (" + currentAttempt + "/" + totalAttempts + ")");
+        } catch (Exception e) {
+            System.err.println("❌ Error closing popup: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * FIXED: Click game launcher with better error handling
+     */
+    private boolean clickGameLauncher(Point launcherLocation) {
+        try {
+            System.out.println("🚀 Clicking game launcher at " + launcherLocation);
+            
+            if (BotUtils.clickMenu(instance.index, launcherLocation)) {
+                System.out.println("✅ Successfully clicked game launcher");
+                return true;
+            } else {
+                System.err.println("❌ Failed to click game launcher");
+                return false;
+            }
+            
+        } catch (Exception e) {
+            System.err.println("❌ Error clicking game launcher: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * FIXED: Wait for game to start with popup handling during load
+     */
+    private boolean waitForGameToStart() {
+        try {
+            System.out.println("⏳ Waiting for game to start...");
+            
+            // Wait initial load time
+            if (!BotUtils.delay(10000)) {
+                return false;
+            }
+            
+            // Check if game started with multiple attempts, handling popups during load
+            String verifyPath = "screenshots/verify_game_start_" + instance.index + ".png";
+            for (int attempt = 1; attempt <= 3; attempt++) {
+                System.out.println("🔍 Verifying game start attempt " + attempt + "/3");
+                
+                if (BotUtils.takeMenuScreenshotLegacy(instance.index, verifyPath)) {
+                    GameStatusResult result = performComprehensiveStatusCheck(verifyPath);
                     
-                    // Wait for game to start
-                    System.out.println("⏳ Waiting for game to start after launcher click...");
-                    BotUtils.delay(10000); // Wait longer for game to load
-                    
-                    // Take screenshot to check if game started
-                    String afterLaunchPath = "screenshots/after_launch_" + instance.index + ".png";
-                    if (BotUtils.takeMenuScreenshotLegacy(instance.index, afterLaunchPath)) {
-                        if (checkForGameRunning(afterLaunchPath)) {
-                            System.out.println("🎉 Game successfully started after launcher click!");
-                            return true;
-                        } else {
-                            System.out.println("⚠️ Game not detected after launcher click, waiting more...");
-                            
-                            // Wait even more and check again
-                            BotUtils.delay(8000);
-                            String finalCheckPath = "screenshots/final_check_" + instance.index + ".png";
-                            if (BotUtils.takeMenuScreenshotLegacy(instance.index, finalCheckPath)) {
-                                return checkForGameRunning(finalCheckPath);
+                    if (result.gameRunning) {
+                        System.out.println("🎉 Game successfully started!");
+                        return true;
+                    } else if (result.popupFound) {
+                        System.out.println("🚫 Found popup during game load, closing it...");
+                        if (closePopup(result.popupLocation, result.popupType)) {
+                            System.out.println("✅ Closed popup during game load, continuing wait...");
+                            // After closing popup, wait a bit and check again
+                            if (!BotUtils.delay(3000)) {
+                                return false;
                             }
+                            
+                            // Take another screenshot to check if game is now running
+                            if (BotUtils.takeMenuScreenshotLegacy(instance.index, verifyPath)) {
+                                GameStatusResult afterPopupResult = performComprehensiveStatusCheck(verifyPath);
+                                if (afterPopupResult.gameRunning) {
+                                    System.out.println("🎉 Game started successfully after closing popup!");
+                                    return true;
+                                }
+                            }
+                        } else {
+                            System.err.println("❌ Failed to close popup during game load");
                         }
                     }
-                } else {
-                    publish("[ERROR] Click failed (" + currentAttempt + "/" + totalAttempts + ")");
-                    System.err.println("❌ Failed to click game launcher");
                 }
-            } else {
-                publish("[ERROR] Launcher not found (" + currentAttempt + "/" + totalAttempts + ")");
-                System.out.println("❌ Game launcher not found for instance " + instance.index);
+                
+                if (attempt < 3) {
+                    System.out.println("⏳ Game not started yet, waiting more...");
+                    if (!BotUtils.delay(5000)) {
+                        return false;
+                    }
+                }
             }
             
+            System.err.println("❌ Game did not start after waiting");
             return false;
             
         } catch (Exception e) {
-            System.err.println("❌ Error trying to click game launcher: " + e.getMessage());
+            System.err.println("❌ Error waiting for game to start: " + e.getMessage());
             return false;
         }
     }
-    
-    private boolean performPopupClose(Point closeBtnLoc, String closeBtn, int currentAttempt, int totalAttempts, double confidence) {
-        System.out.println("🎯 ATTEMPTING TO CLOSE POPUP:");
-        System.out.println("  Button: " + closeBtn);
-        System.out.println("  Location: " + closeBtnLoc);
-        
-        if (BotUtils.clickMenu(instance.index, closeBtnLoc)) {
-            System.out.println("  ✅ Popup close click successful");
-            Main.addToConsole("🚫 " + instance.name + " closed popup with " + closeBtn);
-            publish("Closed popup (" + currentAttempt + "/" + totalAttempts + ")");
+
+    /**
+     * FIXED: Final verification with return value
+     */
+    private boolean performFinalVerification(String screenPath) {
+        try {
+            Main.addToConsole("🔍 " + instance.name + " verifying final game status...");
             
-            BotUtils.delay(2000);
-            return true;
-        } else {
-            System.err.println("🚫 POPUP CLOSE FAILED for " + closeBtn + " at " + closeBtnLoc);
+            if (takeValidScreenshot(screenPath, 0, 0)) {
+                GameStatusResult finalResult = performComprehensiveStatusCheck(screenPath);
+                
+                if (finalResult.gameRunning) {
+                    Main.addToConsole("✅ " + instance.name + " game verified running");
+                    publish("Game running successfully");
+                    System.out.println("Game confirmed running for instance " + instance.index);
+                    return true;
+                } else {
+                    Main.addToConsole("⚠️ " + instance.name + " game status uncertain");
+                    publish("Game status uncertain");
+                    return false;
+                }
+            } else {
+                Main.addToConsole("❌ " + instance.name + " final verification failed");
+                publish("Final verification failed");
+                return false;
+            }
+            
+        } catch (Exception e) {
+            System.err.println("❌ Error in final verification: " + e.getMessage());
             return false;
         }
-    }
-    
-    // Overload for compatibility
-    private boolean performPopupClose(Point closeBtnLoc, String closeBtn, int currentAttempt, int totalAttempts) {
-        return performPopupClose(closeBtnLoc, closeBtn, currentAttempt, totalAttempts, 0.8);
     }
 
     @Override
@@ -418,5 +451,17 @@ public class AutoStartGameTask extends javax.swing.SwingWorker<Void, String> {
         cancel(true);
         Main.addToConsole("🛑 " + instance.name + " auto start game stopped");
         System.out.println("Stop requested for auto start game task on instance " + instance.index);
+    }
+
+    /**
+     * OPTIMIZED: Data class to hold comprehensive status check results
+     */
+    private static class GameStatusResult {
+        boolean gameRunning = false;
+        boolean popupFound = false;
+        Point popupLocation = null;
+        String popupType = null;
+        boolean launcherFound = false;
+        Point launcherLocation = null;
     }
 }

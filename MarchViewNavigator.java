@@ -3,8 +3,8 @@ package newgame;
 import java.awt.Point;
 
 /**
- * Handles navigation within the march view UI
- * Separated from main task to improve code organization
+ * SPEED OPTIMIZED: Handles navigation within the march view UI
+ * Much faster execution with reduced delays and optimized timing
  */
 public class MarchViewNavigator {
     private final MemuInstance instance;
@@ -14,23 +14,23 @@ public class MarchViewNavigator {
     }
     
     /**
-     * Setup march view by opening left panel and clicking wilderness
+     * SPEED OPTIMIZED: Setup march view by opening left panel and clicking wilderness
      */
     public boolean setupMarchView() {
         try {
-            System.out.println("🔧 Setting up march view for instance " + instance.index);
+            System.out.println("🔧 Setting up march view for instance " + instance.index + " (FAST MODE)");
             
-            if (!clickOpenLeft()) {
+            if (!clickOpenLeftFast()) {
                 System.err.println("❌ Failed to open left panel");
                 return false;
             }
             
-            if (!clickWildernessButton()) {
+            if (!clickWildernessButtonFast()) {
                 System.err.println("❌ Failed to click wilderness button");
                 return false;
             }
             
-            System.out.println("✅ March view setup complete");
+            System.out.println("✅ March view setup complete (FAST)");
             return true;
             
         } catch (Exception e) {
@@ -40,9 +40,9 @@ public class MarchViewNavigator {
     }
     
     /**
-     * Click the open left panel button
+     * SPEED OPTIMIZED: Click the open left panel button
      */
-    private boolean clickOpenLeft() {
+    private boolean clickOpenLeftFast() {
         try {
             String screenPath = "screenshots/open_left_" + instance.index + ".png";
             if (!BotUtils.takeScreenshot(instance.index, screenPath)) {
@@ -53,8 +53,8 @@ public class MarchViewNavigator {
             Point openLeftButton = BotUtils.findImageOnScreen(screenPath, "open_left.png", 0.6);
             if (openLeftButton != null) {
                 if (BotUtils.clickMenu(instance.index, openLeftButton)) {
-                    System.out.println("✅ Clicked open left panel button");
-                    Thread.sleep(2000);
+                    System.out.println("✅ Clicked open left panel button (FAST)");
+                    Thread.sleep(1000); // SPEED: 2s → 1s
                     return true;
                 }
             }
@@ -69,10 +69,12 @@ public class MarchViewNavigator {
     }
     
     /**
-     * Click the wilderness button to enter march mode
+     * SPEED OPTIMIZED: Click the wilderness button to enter march mode
      */
-    private boolean clickWildernessButton() {
+    private boolean clickWildernessButtonFast() {
         try {
+            System.out.println("🌍 Clicking wilderness button to enter march mode (FAST)...");
+            
             String screenPath = "screenshots/wilderness_" + instance.index + ".png";
             if (!BotUtils.takeScreenshot(instance.index, screenPath)) {
                 System.err.println("Failed to take screenshot for wilderness button");
@@ -82,8 +84,8 @@ public class MarchViewNavigator {
             Point wildernessButton = BotUtils.findImageOnScreen(screenPath, "wilderness_button.png", 0.6);
             if (wildernessButton != null) {
                 if (BotUtils.clickMenu(instance.index, wildernessButton)) {
-                    System.out.println("✅ Clicked wilderness button");
-                    Thread.sleep(3000);
+                    System.out.println("✅ Clicked wilderness button (FAST)");
+                    Thread.sleep(2000); // SPEED: 3s → 2s
                     return true;
                 }
             }
@@ -98,11 +100,11 @@ public class MarchViewNavigator {
     }
     
     /**
-     * Click world icon to enter world view from town view
+     * SPEED OPTIMIZED: Click world icon to enter world view from town view
      */
-    public boolean clickWorldIcon() {
+    public boolean clickWorldIconFast() {
         try {
-            System.out.println("🌍 Clicking world_icon to enter world view...");
+            System.out.println("🌍 Clicking world_icon to enter world view (FAST)...");
             
             String screenPath = "screenshots/click_world_icon_" + instance.index + ".png";
             if (!BotUtils.takeScreenshot(instance.index, screenPath)) {
@@ -114,8 +116,8 @@ public class MarchViewNavigator {
             if (worldIcon != null) {
                 System.out.println("✅ Found world_icon at " + worldIcon);
                 if (BotUtils.clickMenu(instance.index, worldIcon)) {
-                    System.out.println("✅ Clicked world_icon successfully");
-                    Thread.sleep(3000);
+                    System.out.println("✅ Clicked world_icon successfully (FAST)");
+                    Thread.sleep(2000); // SPEED: 3s → 2s
                     return true;
                 }
             }
@@ -130,30 +132,59 @@ public class MarchViewNavigator {
     }
     
     /**
-     * Verify we're in world view by checking for town_icon
+     * SPEED OPTIMIZED: Verify we're in world view by checking for town_icon with faster timing
      */
-    public boolean verifyWorldViewWithTownIcon() {
+    public boolean verifyWorldViewWithTownIconFast() {
         try {
-            System.out.println("🌍 Verifying world view by checking for town_icon...");
+            System.out.println("🌍 Verifying world view by checking for town_icon (FAST MODE)...");
             
-            String screenPath = "screenshots/verify_world_view_" + instance.index + ".png";
-            if (!BotUtils.takeScreenshot(instance.index, screenPath)) {
-                System.err.println("Failed to take screenshot for world view verification");
-                return false;
+            // SPEED: Reduced attempts and faster checking
+            int maxAttempts = 6; // SPEED: 10 → 6 attempts (6 seconds total)
+            int attemptDelay = 1000; // Keep 1 second between attempts
+            
+            for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+                System.out.println("🔍 Fast verification attempt " + attempt + "/" + maxAttempts + "...");
+                
+                String screenPath = "screenshots/verify_world_view_fast" + attempt + "_" + instance.index + ".png";
+                if (!BotUtils.takeScreenshot(instance.index, screenPath)) {
+                    System.err.println("❌ Failed to take screenshot for world view verification on attempt " + attempt);
+                    if (attempt < maxAttempts) {
+                        Thread.sleep(attemptDelay);
+                        continue;
+                    } else {
+                        return false;
+                    }
+                }
+                
+                Point townIcon = BotUtils.findImageOnScreen(screenPath, "town_icon.png", 0.6);
+                if (townIcon != null) {
+                    System.out.println("✅ Verified world view - found town_icon at " + townIcon + " on attempt " + attempt + " (FAST)");
+                    return true;
+                }
+                
+                System.out.println("⏳ Town icon not found on attempt " + attempt + ", waiting " + attemptDelay + "ms before retry...");
+                
+                // Don't sleep after the last attempt
+                if (attempt < maxAttempts) {
+                    Thread.sleep(attemptDelay);
+                }
             }
             
-            Point townIcon = BotUtils.findImageOnScreen(screenPath, "town_icon.png", 0.6);
-            if (townIcon != null) {
-                System.out.println("✅ Verified world view - found town_icon at " + townIcon);
-                return true;
-            }
-            
-            System.err.println("❌ Could not find town_icon - not in world view");
+            System.err.println("❌ Could not find town_icon after " + maxAttempts + " attempts (FAST MODE) - not in world view or view hasn't loaded");
             return false;
             
         } catch (Exception e) {
             System.err.println("❌ Error verifying world view: " + e.getMessage());
             return false;
         }
+    }
+    
+    // Legacy methods for compatibility - these just call the fast versions
+    public boolean clickWorldIcon() {
+        return clickWorldIconFast();
+    }
+    
+    public boolean verifyWorldViewWithTownIcon() {
+        return verifyWorldViewWithTownIconFast();
     }
 }

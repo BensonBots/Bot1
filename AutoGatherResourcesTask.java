@@ -12,8 +12,13 @@ import java.util.Map;
 import javax.imageio.ImageIO;
 
 /**
- * REFACTORED: Main AutoGather task with enhanced march details collection
- * Split into smaller, more manageable components
+ * FIXED AutoGatherResourcesTask with proper timing and march tracker integration
+ * 
+ * Key fixes:
+ * 1. Deploy all marches first, then wait for last arrival time
+ * 2. Calculate precise arrival times accounting for deployment timing  
+ * 3. Collect details AFTER all troops arrive
+ * 4. Add to march tracker with REAL times from details page (not deploy times)
  */
 public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
     private final MemuInstance instance;
@@ -65,16 +70,16 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                     
                     // Step 1: Setup march view
                     if (!navigator.setupMarchView()) {
-                        publish("❌ Failed to setup march view, retrying in 30s...");
-                        Thread.sleep(30000);
+                        publish("❌ Failed to setup march view, retrying in 15s...");
+                        Thread.sleep(15000);
                         continue;
                     }
                     
                     // Step 2: Read queue statuses
                     List<MarchDetector.MarchInfo> queues = MarchDetector.readMarchQueues(instance.index);
                     if (queues.isEmpty()) {
-                        publish("⚠️ No queues detected, retrying in 30s...");
-                        Thread.sleep(30000);
+                        publish("⚠️ No queues detected, retrying in 15s...");
+                        Thread.sleep(15000);
                         continue;
                     }
                     
@@ -86,32 +91,16 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                     Main.addToConsole("📊 " + instance.name + " queues: " + status);
                     publish("📊 " + status);
                     
-                    // Step 4: ENHANCED: Check if we need to collect march details from previously deployed marches
-                    if (!deployedMarches.isEmpty()) {
-                        publish("🕒 Checking deployed marches for detail collection...");
-                        boolean allDetailsCollected = checkAndCollectMarchDetails();
-                        
-                        if (allDetailsCollected) {
-                            Main.addToConsole("✅ " + instance.name + " all march details collected successfully");
-                            deployedMarches.clear(); // Clear for next cycle
-                        }
-                    }
-                    
-                    // Step 5: Start marches if we have idle queues
+                    // Step 4: Start marches if we have idle queues
                     if (!idleQueues.isEmpty() && activeQueues < gatherSettings.maxQueues) {
                         deployedMarches.clear(); // Clear previous deployments
-                        startMarchesSequentially(idleQueues, activeQueues);
+                        startMarchesAndCollectDetailsWithProperTiming(idleQueues, activeQueues);
                         
-                        // ENHANCED: Wait for marches to arrive, then collect details
-                        if (!deployedMarches.isEmpty()) {
-                            waitForMarchesToArrive();
-                        }
-                        
-                        Main.addToConsole("⏳ " + instance.name + " waiting 3 minutes for next cycle...");
-                        Thread.sleep(180000);
+                        Main.addToConsole("⏳ " + instance.name + " waiting 2 minutes for next cycle...");
+                        Thread.sleep(120000);
                     } else {
                         // No action needed, wait and check again
-                        Thread.sleep(30000);
+                        Thread.sleep(20000);
                     }
                     
                 } catch (InterruptedException e) {
@@ -120,7 +109,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                 } catch (Exception e) {
                     System.err.println("Error in gather loop: " + e.getMessage());
                     publish("❌ Error: " + e.getMessage());
-                    Thread.sleep(20000);
+                    Thread.sleep(10000);
                 }
             }
             
@@ -134,175 +123,297 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
     }
     
     /**
-     * FIXED: Wait for marches to arrive with reduced buffer time (5-10 seconds max)
+     * FIXED: Deploy all marches, wait for precise arrival times, then collect details
+     * Example: Queue 1 (15:00 + 2:30) = 15:02:30, Queue 2 (15:01 + 1:00) = 15:02:00
+     * Wait until 15:02:31 (last arrival + buffer) then collect all details
      */
-    private void waitForMarchesToArrive() {
-        try {
-            if (deployedMarches.isEmpty()) {
-                System.out.println("⚠️ No deployed marches to wait for");
-                return;
-            }
-            
-            // Calculate the longest estimated deploy time
-            long maxWaitTimeSeconds = 0;
-            for (MarchDeployInfo march : deployedMarches) {
-                long deploySeconds = TimeUtils.parseTimeToSeconds(march.estimatedDeployDuration);
-                maxWaitTimeSeconds = Math.max(maxWaitTimeSeconds, deploySeconds);
-            }
-            
-            // FIXED: Add only 10 seconds buffer instead of 30
-            maxWaitTimeSeconds += 10;
-            
-            Main.addToConsole("⏳ " + instance.name + " waiting " + TimeUtils.formatTime(maxWaitTimeSeconds) + " for marches to arrive...");
-            publish("⏳ Waiting for marches to arrive (" + TimeUtils.formatTime(maxWaitTimeSeconds) + ")");
-            
-            // Wait with progress updates
-            long waitInterval = 30000; // 30 seconds
-            long totalWaitTime = maxWaitTimeSeconds * 1000; // Convert to milliseconds
-            long currentWaitTime = 0;
-            
-            while (currentWaitTime < totalWaitTime && !shouldStop && !isCancelled()) {
-                Thread.sleep(Math.min(waitInterval, totalWaitTime - currentWaitTime));
-                currentWaitTime += waitInterval;
-                
-                long remainingSeconds = (totalWaitTime - currentWaitTime) / 1000;
-                if (remainingSeconds > 0) {
-                    publish("⏳ Marches arriving in " + TimeUtils.formatTime(remainingSeconds));
-                }
-            }
-            
-            if (!shouldStop && !isCancelled()) {
-                Main.addToConsole("🎯 " + instance.name + " marches should have arrived, collecting details...");
-                publish("🎯 Marches arrived, collecting details...");
-                
-                // Now collect march details
-                detailsCollector.collectMarchDetailsFromAllDeployedMarches(deployedMarches);
-            }
-            
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            Main.addToConsole("🛑 " + instance.name + " march waiting interrupted");
-        } catch (Exception e) {
-            System.err.println("❌ Error waiting for marches: " + e.getMessage());
-            Main.addToConsole("❌ " + instance.name + " error waiting for marches: " + e.getMessage());
-        }
-    }
-    
-    /**
-     * Check if deployed marches are ready for detail collection
-     */
-    private boolean checkAndCollectMarchDetails() {
-        try {
-            if (deployedMarches.isEmpty()) {
-                return true; // No marches to check
-            }
-            
-            LocalDateTime now = LocalDateTime.now();
-            boolean allReady = true;
-            
-            for (MarchDeployInfo march : deployedMarches) {
-                if (!march.detailsCollected) {
-                    if (march.hasArrived()) {
-                        System.out.println("🎯 Queue " + march.queueNumber + " should have arrived, ready for details collection");
-                    } else {
-                        allReady = false;
-                        long remainingSeconds = march.getSecondsUntilArrival();
-                        System.out.println("⏳ Queue " + march.queueNumber + " arriving in " + TimeUtils.formatTime(remainingSeconds));
-                    }
-                }
-            }
-            
-            if (allReady) {
-                return detailsCollector.collectMarchDetailsFromAllDeployedMarches(deployedMarches);
-            }
-            
-            return false;
-            
-        } catch (Exception e) {
-            System.err.println("❌ Error checking march readiness: " + e.getMessage());
-            return false;
-        }
-    }
-    
-    /**
-     * Start marches sequentially and track deployment info
-     */
-    private void startMarchesSequentially(List<Integer> idleQueues, int currentActive) {
+    private void startMarchesAndCollectDetailsWithProperTiming(List<Integer> idleQueues, int currentActive) {
         try {
             int slotsAvailable = gatherSettings.maxQueues - currentActive;
             int marchesToStart = Math.min(slotsAvailable, idleQueues.size());
             
-            Main.addToConsole("🚀 " + instance.name + " starting " + marchesToStart + " march(es) SEQUENTIALLY");
-            publish("🚀 Starting " + marchesToStart + " march(es) sequentially");
+            Main.addToConsole("🚀 " + instance.name + " deploying " + marchesToStart + " march(es) then waiting for optimal timing");
+            publish("🚀 Deploying " + marchesToStart + " march(es) with smart timing");
             
             int successCount = 0;
             boolean isFirstMarch = true;
+            List<MarchDeployInfo> successfulDeployments = new ArrayList<>();
             
+            // PHASE 1: Deploy all marches first (fast, no interruptions)
             for (int i = 0; i < marchesToStart; i++) {
                 String resourceType = gatherSettings.getNextResource();
                 int queueNumber = idleQueues.get(i);
                 
-                Main.addToConsole("📋 " + instance.name + " starting " + resourceType + " on Queue " + queueNumber + " (" + (i+1) + "/" + marchesToStart + ")");
-                publish("📋 Starting " + resourceType + " on Queue " + queueNumber + " (" + (i+1) + "/" + marchesToStart + ")");
+                Main.addToConsole("📋 " + instance.name + " deploying " + resourceType + " on Queue " + queueNumber + " (" + (i+1) + "/" + marchesToStart + ")");
+                publish("📋 Deploying " + resourceType + " on Queue " + queueNumber + " (" + (i+1) + "/" + marchesToStart + ")");
                 
+                // Record deployment start time BEFORE deploying
+                LocalDateTime deployStartTime = LocalDateTime.now();
                 boolean marchSuccess;
                 
                 if (isFirstMarch) {
-                    marchSuccess = gatheringController.startFirstMarch(resourceType, queueNumber);
+                    marchSuccess = gatheringController.startFirstMarchFast(resourceType, queueNumber);
                     isFirstMarch = false;
                 } else {
-                    marchSuccess = gatheringController.startSubsequentMarch(resourceType, queueNumber);
+                    marchSuccess = gatheringController.startSubsequentMarchFast(resourceType, queueNumber);
                 }
                 
                 if (marchSuccess) {
                     successCount++;
-                    Main.addToConsole("✅ " + instance.name + " successfully started " + resourceType + " on Queue " + queueNumber);
+                    Main.addToConsole("✅ " + instance.name + " successfully deployed " + resourceType + " on Queue " + queueNumber);
                     
-                    // ENHANCED: Track deployed march for later details collection
-                    // Get the extracted time from the gathering controller
+                    // Track deployed march with EXACT deployment time
                     String deployTime = gatheringController.getLastExtractedTime();
                     if (deployTime == null) deployTime = lastExtractedTime;
                     
                     MarchDeployInfo deployInfo = new MarchDeployInfo(
                         queueNumber, 
                         resourceType, 
-                        LocalDateTime.now(),
+                        deployStartTime,  // EXACT deployment time
                         deployTime
                     );
-                    deployedMarches.add(deployInfo);
-                    System.out.println("📊 Added march to tracking: " + deployInfo);
+                    successfulDeployments.add(deployInfo);
+                    System.out.println("📊 Added march to deployment list: Queue " + queueNumber + 
+                                     " deployed at " + deployStartTime.toLocalTime() + 
+                                     " (+" + deployTime + ")");
                     
-                    // REMOVED: Don't add to march tracker immediately
-                    // We'll add it after collecting details with total time
-                    
+                    // Short delay between deployments
                     if (i < marchesToStart - 1) {
-                        Thread.sleep(2000);
+                        Thread.sleep(1000);
                     }
                 } else {
-                    Main.addToConsole("❌ " + instance.name + " failed to start " + resourceType + " on Queue " + queueNumber);
+                    Main.addToConsole("❌ " + instance.name + " failed to deploy " + resourceType + " on Queue " + queueNumber);
                     isFirstMarch = true;
                 }
             }
             
             if (successCount > 0) {
-                Main.addToConsole("🎉 " + instance.name + " sequential deployment complete: " + successCount + "/" + marchesToStart + " successful");
-                Main.addToConsole("📊 " + instance.name + " tracking " + deployedMarches.size() + " marches for details collection");
+                Main.addToConsole("🎉 " + instance.name + " deployment phase complete: " + successCount + "/" + marchesToStart + " successful");
                 
-                // Show march tracker window
-                javax.swing.SwingUtilities.invokeLater(() -> {
-                    try {
-                        MarchTrackerGUI.showTracker();
-                    } catch (Exception e) {
-                        System.err.println("Error showing march tracker: " + e.getMessage());
+                // PHASE 2: Wait for optimal timing (when LAST march arrives)
+                waitForOptimalDetailsCollectionTime(successfulDeployments);
+                
+                // PHASE 3: Collect details for all deployed marches
+                if (!successfulDeployments.isEmpty()) {
+                    Main.addToConsole("🎯 " + instance.name + " collecting details for all " + successfulDeployments.size() + " marches");
+                    publish("🎯 Collecting details for " + successfulDeployments.size() + " marches...");
+                    
+                    boolean detailsSuccess = detailsCollector.collectMarchDetailsFromAllDeployedMarches(successfulDeployments);
+                    
+                    if (detailsSuccess) {
+                        // Add all marches to march tracker AFTER details collection
+                        for (MarchDeployInfo deployInfo : successfulDeployments) {
+                            addToMarchTracker(deployInfo);
+                        }
+                        
+                        Main.addToConsole("✅ " + instance.name + " details collected for all marches");
+                        
+                        // Show march tracker window
+                        javax.swing.SwingUtilities.invokeLater(() -> {
+                            try {
+                                MarchTrackerGUI.showTracker();
+                            } catch (Exception e) {
+                                System.err.println("Error showing march tracker: " + e.getMessage());
+                            }
+                        });
+                    } else {
+                        Main.addToConsole("⚠️ " + instance.name + " some details collection failed");
+                        
+                        // Still add to tracker with estimated times
+                        for (MarchDeployInfo deployInfo : successfulDeployments) {
+                            addToMarchTracker(deployInfo);
+                        }
                     }
-                });
+                }
             } else {
-                Main.addToConsole("❌ " + instance.name + " no marches started successfully");
+                Main.addToConsole("❌ " + instance.name + " no marches deployed successfully");
             }
             
         } catch (Exception e) {
-            System.err.println("❌ Error in sequential march starting: " + e.getMessage());
-            Main.addToConsole("❌ " + instance.name + " sequential march error: " + e.getMessage());
+            System.err.println("❌ Error in march deployment and details collection: " + e.getMessage());
+            Main.addToConsole("❌ " + instance.name + " deployment error: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * FIXED: Calculate precise arrival times and wait efficiently
+     * Example: Queue 1 (15:00 + 2:30) = 15:02:30, Queue 2 (15:01 + 1:00) = 15:02:00
+     * Wait until 15:02:31 (last arrival + 1 second buffer)
+     * @throws InterruptedException 
+     */
+    private void waitForOptimalDetailsCollectionTime(List<MarchDeployInfo> deployedMarches) throws InterruptedException {
+        try {
+            if (deployedMarches.isEmpty()) {
+                System.out.println("⚠️ No deployed marches to wait for");
+                return;
+            }
+            
+            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime latestArrivalTime = now;
+            
+            System.out.println("🕐 Current time: " + now.toLocalTime());
+            System.out.println("📊 Calculating precise arrival times:");
+            
+            // Calculate when each march will actually arrive
+            for (MarchDeployInfo march : deployedMarches) {
+                long deploySeconds = TimeUtils.parseTimeToSeconds(march.estimatedDeployDuration);
+                
+                // Get the deployment time (correct field name is deployTime)
+                LocalDateTime deployTime = march.deployTime;
+                LocalDateTime arrivalTime = deployTime.plusSeconds(deploySeconds);
+                
+                System.out.println("  Queue " + march.queueNumber + 
+                                 ": deployed " + deployTime.toLocalTime() + 
+                                 " → arrives " + arrivalTime.toLocalTime() + 
+                                 " (+" + march.estimatedDeployDuration + ")");
+                
+                if (arrivalTime.isAfter(latestArrivalTime)) {
+                    latestArrivalTime = arrivalTime;
+                }
+            }
+            
+            // Add 1 second buffer to ensure all troops have arrived
+            latestArrivalTime = latestArrivalTime.plusSeconds(1);
+            
+            // Calculate how long we ACTUALLY need to wait from NOW
+            long waitSeconds = java.time.Duration.between(now, latestArrivalTime).getSeconds();
+            
+            System.out.println("🕐 Wait calculation: now=" + now.toLocalTime() + 
+                             ", latest=" + latestArrivalTime.toLocalTime() + 
+                             ", waitSeconds=" + waitSeconds);
+            
+            if (waitSeconds <= 10) {
+                Main.addToConsole("🎯 " + instance.name + " all troops have arrived or arriving very soon!");
+                System.out.println("🎯 Last arrival: " + latestArrivalTime.toLocalTime() + " (in " + waitSeconds + " seconds)");
+                
+                // Wait the remaining time if needed
+                if (waitSeconds > 0) {
+                    System.out.println("⏳ Short wait: " + waitSeconds + " seconds + 5 second buffer");
+                    Thread.sleep(waitSeconds * 1000 + 5000); // Add 5 second buffer
+                }
+                return;
+            }
+            
+            String waitTimeStr = TimeUtils.formatTime(waitSeconds);
+            Main.addToConsole("⏳ " + instance.name + " waiting " + waitTimeStr + " for last troops to arrive...");
+            publish("⏳ Waiting " + waitTimeStr + " for last troops to arrive...");
+            System.out.println("⏳ Last arrival: " + latestArrivalTime.toLocalTime() + " (in " + waitTimeStr + ")");
+            
+            // Wait with progress updates
+            long waitInterval = 15000; // 15 second intervals
+            long totalWaitTime = waitSeconds * 1000;
+            long currentWaitTime = 0;
+            
+            System.out.println("⏳ Starting wait loop: totalWaitTime=" + totalWaitTime + "ms, waitInterval=" + waitInterval + "ms");
+            
+            while (currentWaitTime < totalWaitTime && !shouldStop && !isCancelled()) {
+                long thisWait = Math.min(waitInterval, totalWaitTime - currentWaitTime);
+                System.out.println("⏳ Waiting " + thisWait + "ms (currentWaitTime=" + currentWaitTime + "/" + totalWaitTime + ")");
+                
+                Thread.sleep(thisWait);
+                currentWaitTime += thisWait;
+                
+                long remainingSeconds = (totalWaitTime - currentWaitTime) / 1000;
+                if (remainingSeconds > 0) {
+                    publish("⏳ Last troops arriving in " + TimeUtils.formatTime(remainingSeconds));
+                    System.out.println("⏳ Remaining: " + TimeUtils.formatTime(remainingSeconds));
+                } else {
+                    publish("🎯 All troops have arrived at resources!");
+                    System.out.println("🎯 All troops have arrived!");
+                }
+            }
+            
+            System.out.println("⏳ Wait loop completed: currentWaitTime=" + currentWaitTime + "/" + totalWaitTime);
+            
+            if (!shouldStop && !isCancelled()) {
+                Main.addToConsole("🎯 " + instance.name + " all troops have arrived, ready for details collection");
+            }
+            
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            Main.addToConsole("🛑 " + instance.name + " deploy wait interrupted");
+        } catch (Exception e) {
+            System.err.println("❌ Error calculating arrival times: " + e.getMessage());
+            e.printStackTrace();
+            
+            // Fallback to simple longest time wait
+            long maxDeployTimeSeconds = 0;
+            String longestTimeStr = "00:00:00";
+            
+            for (MarchDeployInfo march : deployedMarches) {
+                long deploySeconds = TimeUtils.parseTimeToSeconds(march.estimatedDeployDuration);
+                if (deploySeconds > maxDeployTimeSeconds) {
+                    maxDeployTimeSeconds = deploySeconds;
+                    longestTimeStr = march.estimatedDeployDuration;
+                }
+            }
+            
+            if (maxDeployTimeSeconds > 0) {
+                Main.addToConsole("⏳ " + instance.name + " fallback wait: " + longestTimeStr);
+                Thread.sleep(maxDeployTimeSeconds * 1000);
+            }
+        }
+    }
+    
+    /**
+     * Add march to tracker using REAL times from details collection
+     * MarchDetailsCollector populates actualGatheringTime, so we use that!
+     */
+    private void addToMarchTracker(MarchDeployInfo deployInfo) {
+        try {
+            // Check if we have real gathering time from details collection
+            if (deployInfo.actualGatheringTime != null) {
+                // Use REAL times from details page
+                String actualGatheringTime = deployInfo.actualGatheringTime;
+                String actualTotalTime = deployInfo.calculateTotalTime(); // This uses actualGatheringTime
+                
+                // Calculate marching time (deploy time for one-way trip)
+                long totalSeconds = TimeUtils.parseTimeToSeconds(actualTotalTime);
+                long gatheringSeconds = TimeUtils.parseTimeToSeconds(actualGatheringTime);
+                long marchingSeconds = (totalSeconds - gatheringSeconds) / 2; // Round trip, so divide by 2
+                String marchingTime = TimeUtils.formatTime(marchingSeconds);
+                
+                MarchTrackerGUI.getInstance().addMarch(
+                    instance.index, 
+                    deployInfo.queueNumber, 
+                    deployInfo.resourceType, 
+                    actualGatheringTime,  // REAL gathering time from details page
+                    marchingTime,         // Calculated marching time
+                    actualTotalTime       // REAL total time (4+ hours!)
+                );
+                
+                System.out.println("✅ Added to march tracker with REAL times: Queue " + deployInfo.queueNumber + 
+                                 ", " + deployInfo.resourceType + 
+                                 ", Gathering: " + actualGatheringTime +
+                                 ", Total: " + actualTotalTime);
+                
+            } else {
+                // Fallback: Use estimated times if details collection failed
+                System.out.println("⚠️ No actual gathering time available for Queue " + deployInfo.queueNumber + ", using estimated times");
+                
+                long totalSeconds = TimeUtils.parseTimeToSeconds(deployInfo.estimatedDeployDuration);
+                long marchingSeconds = totalSeconds / 2;
+                long gatheringSeconds = totalSeconds - marchingSeconds;
+                
+                String marchingTime = TimeUtils.formatTime(marchingSeconds);
+                String gatheringTime = TimeUtils.formatTime(gatheringSeconds);
+                
+                MarchTrackerGUI.getInstance().addMarch(
+                    instance.index, 
+                    deployInfo.queueNumber, 
+                    deployInfo.resourceType, 
+                    gatheringTime,                        // Estimated gathering time
+                    marchingTime,                         // Estimated marching time
+                    deployInfo.estimatedDeployDuration    // Deploy time (fallback)
+                );
+                
+                System.out.println("📊 Added to march tracker with ESTIMATED times: Queue " + deployInfo.queueNumber + 
+                                 ", " + deployInfo.resourceType + 
+                                 ", Deploy: " + deployInfo.estimatedDeployDuration);
+            }
+            
+        } catch (Exception e) {
+            System.err.println("❌ Error adding march to tracker: " + e.getMessage());
         }
     }
     
@@ -364,66 +475,35 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
         cancel(true);
         Main.addToConsole("🛑 " + instance.name + " enhanced auto gather stop requested");
     }
-    
-    // === HELPER METHODS FOR IMPROVED MARCH DETECTION ===
-    
-    /**
-     * IMPROVED: Extract march text panel with better positioning for status detection
-     */
-    private static boolean extractMarchTextPanelImproved(String sourcePath, String outputPath) {
-        try {
-            BufferedImage sourceImage = ImageIO.read(new File(sourcePath));
-            if (sourceImage == null) {
-                System.err.println("❌ Could not load march screenshot: " + sourcePath);
-                return false;
-            }
-            
-            // IMPROVED: Adjust extraction to better capture status text based on your image
-            // The march queue panel shows clear status text that we need to capture better
-            int panelX = 90;        // Slightly more left to capture full words
-            int panelY = 210;       // Start from where queue text begins
-            int panelWidth = 140;   // Wider to capture full status words like "Idle"
-            int panelHeight = 270;  // Cover all 6 queues
-            
-            System.out.println("📐 [DEBUG] Extracting IMPROVED panel region: x=" + panelX + 
-                              ", y=" + panelY + ", w=" + panelWidth + ", h=" + panelHeight);
-            System.out.println("🎯 [DEBUG] Improved focus on full status words");
-            
-            // Bounds checking
-            panelX = Math.max(0, panelX);
-            panelY = Math.max(0, panelY);
-            panelWidth = Math.min(panelWidth, sourceImage.getWidth() - panelX);
-            panelHeight = Math.min(panelHeight, sourceImage.getHeight() - panelY);
-            
-            if (panelWidth <= 0 || panelHeight <= 0) {
-                System.err.println("❌ Invalid panel dimensions after bounds check");
-                return false;
-            }
-            
-            // Extract the improved text region
-            BufferedImage textPanel = sourceImage.getSubimage(panelX, panelY, panelWidth, panelHeight);
-            
-            // Use shared OCRUtils for image enhancement
-            textPanel = OCRUtils.enhanceImageForOCR(textPanel);
-            
-            // Save the extracted panel
-            File outputFile = new File(outputPath);
-            File parentDir = outputFile.getParentFile();
-            if (parentDir != null && !parentDir.exists()) {
-                parentDir.mkdirs();
-            }
-            
-            if (ImageIO.write(textPanel, "PNG", outputFile)) {
-                System.out.println("✅ [DEBUG] Improved text panel extracted: " + outputPath + " (size: " + outputFile.length() + " bytes)");
-                return true;
-            } else {
-                System.err.println("❌ Failed to save text panel");
-                return false;
-            }
-            
-        } catch (Exception e) {
-            System.err.println("❌ Error extracting march text panel: " + e.getMessage());
-            return false;
-        }
-    }
 }
+
+/* 
+ * KEY IMPROVEMENTS MADE:
+ * 
+ * 1. PRECISE TIMING CALCULATION:
+ *    - Records EXACT deployment time for each march
+ *    - Calculates precise arrival time: deployTime + deployDuration  
+ *    - Waits until LAST march arrives (not longest deploy time)
+ *    - Example: Queue 1 (15:00 + 2:30) = 15:02:30, Queue 2 (15:01 + 1:00) = 15:02:00
+ *              Wait until 15:02:31 (saves time vs waiting full 2:30)
+ * 
+ * 2. THREE-PHASE WORKFLOW:
+ *    - Phase 1: Deploy all marches quickly (no interruptions)
+ *    - Phase 2: Wait for optimal timing (when all troops arrive)
+ *    - Phase 3: Collect details for all marches together
+ * 
+ * 3. MARCH TRACKER INTEGRATION:
+ *    - Adds marches AFTER details collection
+ *    - TODO: Need MarchDeployInfo updated with real times from details page
+ *    - Should show 04:23:29 total time, not 00:02:36 deploy time
+ * 
+ * 4. ROBUST ERROR HANDLING:
+ *    - Fallback to simple timing if calculation fails
+ *    - Still adds marches to tracker even if details collection fails
+ *    - Graceful degradation throughout
+ * 
+ * NEXT STEPS:
+ * - Need MarchDeployInfo.java to add fields for real times from details page
+ * - Update MarchDetailsCollector to populate those fields  
+ * - Use real times in addToMarchTracker() method
+ */

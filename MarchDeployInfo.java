@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 /**
  * Data class to track information about deployed marches
  * Used to manage march lifecycle from deployment to details collection
+ * FIXED: Removed unnecessary buffer time from arrival detection
  */
 public class MarchDeployInfo {
     public int queueNumber;
@@ -22,12 +23,13 @@ public class MarchDeployInfo {
     }
     
     /**
-     * Check if this march should have arrived at its destination
+     * FIXED: Check if this march should have arrived at its destination (NO buffer)
      */
     public boolean hasArrived() {
         long deploySeconds = TimeUtils.parseTimeToSeconds(estimatedDeployDuration);
         LocalDateTime expectedArrival = deployTime.plusSeconds(deploySeconds);
-        return LocalDateTime.now().isAfter(expectedArrival.plusSeconds(10)); // 10 second buffer
+        // FIXED: No buffer time - check as soon as march should have arrived
+        return LocalDateTime.now().isAfter(expectedArrival) || LocalDateTime.now().isEqual(expectedArrival);
     }
     
     /**
@@ -38,7 +40,7 @@ public class MarchDeployInfo {
         LocalDateTime expectedArrival = deployTime.plusSeconds(deploySeconds);
         LocalDateTime now = LocalDateTime.now();
         
-        if (now.isAfter(expectedArrival)) {
+        if (now.isAfter(expectedArrival) || now.isEqual(expectedArrival)) {
             return 0;
         }
         
