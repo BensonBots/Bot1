@@ -153,20 +153,25 @@ public class MarchTrackerGUI extends JFrame {
     public void addMarch(int instanceIndex, int queueNumber, String resourceType, 
                         String gatheringTime, String marchingTime, String totalTime) {
         
-        String marchId = instanceIndex + "-" + queueNumber;
+        // FIXED: Store with display queue number (what user sees in game)
+        int displayQueueNumber = 3 - queueNumber; // Convert internal queue to display queue
+        String marchId = instanceIndex + "-" + displayQueueNumber;
         LocalDateTime startTime = LocalDateTime.now();
         
-        // FIXED: Create march with proper timing information
+        // Create march with display queue number
         ActiveMarch march = new ActiveMarch(
-            instanceIndex, queueNumber, resourceType, 
+            instanceIndex, 
+            displayQueueNumber, // Use display queue number consistently
+            resourceType, 
             gatheringTime, marchingTime, totalTime, startTime
         );
         
+        // Store with display queue number
         activeMarches.put(marchId, march);
         
         SwingUtilities.invokeLater(() -> {
             updateTableDataOptimized();
-            statusLabel.setText("Added march: " + resourceType + " on Instance " + instanceIndex + " Queue " + queueNumber);
+            statusLabel.setText("Added march: " + resourceType + " on Instance " + instanceIndex + " Queue " + displayQueueNumber);
         });
         
         System.out.println("📊 [TRACKER] Added march: " + march);

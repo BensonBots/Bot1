@@ -196,14 +196,27 @@ public class MarchDetailsCollector {
                 
                 System.out.println("📸 [DEBUG] Details page screenshot saved: " + screenPath);
                 
-                // DEBUG: Try a wide range of coordinates to find the gathering time
-                System.out.println("🔍 [DEBUG] Testing multiple coordinate grids to locate gathering time...");
+                // FIXED: Try the best known coordinates first (fallback_gathering_time_1)
+                String timeRegionPath = "screenshots/gathering_time_" + instance.index + ".png";
+                if (OCRUtils.extractImageRegion(screenPath, timeRegionPath, 400, 165, 80, 20)) { // Moved right by 40px
+                    String timeText = OCRUtils.performTimeOCR(timeRegionPath, instance.index);
+                    if (timeText != null && !timeText.trim().isEmpty()) {
+                        String parsedTime = TimeUtils.parseTimeFromText(timeText);
+                        if (parsedTime != null && TimeUtils.isValidMarchTime(parsedTime)) {
+                            System.out.println("✅ Successfully extracted time from best known region: " + parsedTime);
+                            return parsedTime;
+                        }
+                    }
+                }
+                
+                // If best known region fails, try the grid search
+                System.out.println("🔍 [DEBUG] Best region failed, trying coordinate grid...");
                 
                 // Test a grid of positions across the details page
                 int[] xPositions = {300, 320, 340, 360, 380, 400, 420};
                 int[] yPositions = {120, 140, 160, 180, 200, 220};
                 int[] widths = {60, 80, 100, 120};
-                int[] heights = {15, 20, 25, 30};
+                int[] heights = {15, 20, 25}; // Reduced maximum height
                 
                 String bestResult = null;
                 double bestConfidence = 0;
@@ -472,43 +485,72 @@ public class MarchDetailsCollector {
     
     private void addToMarchTrackerFast(MarchDeployInfo marchInfo, String gatheringTime, String totalTime) {
         try {
-            long totalSeconds = TimeUtils.parseTimeToSeconds(totalTime);
-            long gatheringSeconds = TimeUtils.parseTimeToSeconds(gatheringTime);
-            long marchSeconds = (totalSeconds - gatheringSeconds) / 2;
-            String marchTime = TimeUtils.formatTime(marchSeconds);
-            
-            javax.swing.SwingUtilities.invokeLater(() -> {
-                try {
-                    MarchTrackerGUI tracker = MarchTrackerGUI.getInstance();
-                    tracker.addMarch(
-                        instance.index,
-                        marchInfo.queueNumber,
-                        marchInfo.resourceType,
-                        gatheringTime,
-                        marchTime,
-                        totalTime
-                    );
-                    
-                    tracker.setVisible(true);
-                    tracker.toFront();
-                    
-                    System.out.println("📊 Successfully added march to tracker GUI (DEBUG)");
-                    
-                } catch (Exception e) {
-                    System.err.println("❌ Error adding to march tracker GUI: " + e.getMessage());
-                }
-            });
-            
-            System.out.println("📊 March Added (DEBUG): Instance=" + instance.index + 
-                             ", Queue=" + marchInfo.queueNumber + 
-                             ", Resource=" + marchInfo.resourceType + 
-                             ", Gathering=" + gatheringTime +
-                             ", March=" + marchTime +
-                             ", Total=" + totalTime);
-            
+            // FIXED: Calculate times correctly whether we have actual gathering time or not
+            if (gatheringTime != null && !gatheringTime.equals("02:00:00")) {
+                // We have real gathering time from details page
+                long deploySeconds = TimeUtils.parseTimeToSeconds(marchInfo.estimatedDeployDuration);
+                long gatheringSeconds = TimeUtils.parseTimeToSeconds(gatheringTime);
+                
+                // Total time is deploy + gather + deploy (round trip)
+                long totalSeconds = deploySeconds + gatheringSeconds + deploySeconds;
+                String calculatedTotal = TimeUtils.formatTime(totalSeconds);
+                
+                // March time is one-way deploy time
+                String marchTime = marchInfo.estimatedDeployDuration;
+                
+                System.out.println("📊 Time calculation for Queue " + marchInfo.queueNumber + ":");
+                System.out.println("  - Deploy time (one-way): " + marchTime + " (" + deploySeconds + "s)");
+                System.out.println("  - Gathering time: " + gatheringTime + " (" + gatheringSeconds + "s)");
+                System.out.println("  - Total time: " + calculatedTotal + " (" + totalSeconds + "s)");
+                
+                addToTracker(marchInfo, gatheringTime, marchTime, calculatedTotal);
+            } else {
+                // Details collection failed - use deploy time + estimated gathering
+                long deploySeconds = TimeUtils.parseTimeToSeconds(marchInfo.estimatedDeployDuration);
+                String estimatedGatherTime = "02:00:00"; // Default gathering time
+                long gatheringSeconds = TimeUtils.parseTimeToSeconds(estimatedGatherTime);
+                
+                // Total time is deploy + gather + deploy
+                long totalSeconds = deploySeconds + gatheringSeconds + deploySeconds;
+                String calculatedTotal = TimeUtils.formatTime(totalSeconds);
+                
+                System.out.println("⚠️ Using estimated times for Queue " + marchInfo.queueNumber + ":");
+                System.out.println("  - Deploy time (one-way): " + marchInfo.estimatedDeployDuration + " (" + deploySeconds + "s)");
+                System.out.println("  - Estimated gathering: " + estimatedGatherTime + " (" + gatheringSeconds + "s)");
+                System.out.println("  - Total time: " + calculatedTotal + " (" + totalSeconds + "s)");
+                
+                addToTracker(marchInfo, estimatedGatherTime, marchInfo.estimatedDeployDuration, calculatedTotal);
+            }
         } catch (Exception e) {
             System.err.println("❌ Error adding to march tracker: " + e.getMessage());
         }
+    }
+    
+    private void addToTracker(MarchDeployInfo marchInfo, String gatheringTime, String marchTime, String totalTime) {
+        javax.swing.SwingUtilities.invokeLater(() -> {
+            try {
+                MarchTrackerGUI tracker = MarchTrackerGUI.getInstance();
+                tracker.addMarch(
+                    instance.index,
+                    marchInfo.queueNumber,
+                    marchInfo.resourceType,
+                    gatheringTime,
+                    marchTime,
+                    totalTime
+                );
+                
+                tracker.setVisible(true);
+                tracker.toFront();
+                
+                System.out.println("📊 Successfully added march to tracker GUI (DEBUG)");
+                System.out.println("📊 March Details: Gathering=" + gatheringTime + 
+                                 ", March=" + marchTime + 
+                                 ", Total=" + totalTime);
+                
+            } catch (Exception e) {
+                System.err.println("❌ Error adding to march tracker GUI: " + e.getMessage());
+            }
+        });
     }
     
     public String calculateTotalTime(String marchTime, String gatheringTime) {
