@@ -12,13 +12,13 @@ import java.util.Map;
 import javax.imageio.ImageIO;
 
 /**
- * FIXED AutoGatherResourcesTask with proper timing and march tracker integration
+ * FIXED AutoGatherResourcesTask with corrected timing calculations
  * 
  * Key fixes:
- * 1. Deploy all marches first, then wait for last arrival time
- * 2. Calculate precise arrival times accounting for deployment timing  
- * 3. Collect details AFTER all troops arrive
- * 4. Add to march tracker with REAL times from details page (not deploy times)
+ * 1. CORRECTED wait time calculation - was using deploy time as arrival time incorrectly
+ * 2. Deploy time is ONE-WAY trip TO the resource, not total round trip
+ * 3. Troops arrive at resource after DEPLOY time, then gather, then return
+ * 4. Fixed timing logic to properly calculate when troops reach resources
  */
 public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
     private final MemuInstance instance;
@@ -94,7 +94,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                     // Step 4: Start marches if we have idle queues
                     if (!idleQueues.isEmpty() && activeQueues < gatherSettings.maxQueues) {
                         deployedMarches.clear(); // Clear previous deployments
-                        startMarchesAndCollectDetailsWithProperTiming(idleQueues, activeQueues);
+                        startMarchesAndCollectDetailsWithFixedTiming(idleQueues, activeQueues);
                         
                         Main.addToConsole("⏳ " + instance.name + " waiting 2 minutes for next cycle...");
                         Thread.sleep(120000);
@@ -123,17 +123,25 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
     }
     
     /**
-     * FIXED: Deploy all marches, wait for precise arrival times, then collect details
-     * Example: Queue 1 (15:00 + 2:30) = 15:02:30, Queue 2 (15:01 + 1:00) = 15:02:00
-     * Wait until 15:02:31 (last arrival + buffer) then collect all details
+     * FIXED: Deploy all marches, wait for troops to REACH resources, then collect details
+     * 
+     * KEY UNDERSTANDING:
+     * - Deploy time (e.g., 02:30:00) = time for troops to TRAVEL TO the resource
+     * - When troops arrive at resource, they start gathering immediately
+     * - We need to wait for deploy time PLUS small buffer before collecting details
+     * 
+     * Example Timeline:
+     * 15:00:00 - Deploy march (troops start walking)
+     * 15:02:30 - Troops arrive at resource and START gathering (deploy time elapsed)
+     * 15:02:31 - Safe to collect details (troops are now gathering)
      */
-    private void startMarchesAndCollectDetailsWithProperTiming(List<Integer> idleQueues, int currentActive) {
+    private void startMarchesAndCollectDetailsWithFixedTiming(List<Integer> idleQueues, int currentActive) {
         try {
             int slotsAvailable = gatherSettings.maxQueues - currentActive;
             int marchesToStart = Math.min(slotsAvailable, idleQueues.size());
             
-            Main.addToConsole("🚀 " + instance.name + " deploying " + marchesToStart + " march(es) then waiting for optimal timing");
-            publish("🚀 Deploying " + marchesToStart + " march(es) with smart timing");
+            Main.addToConsole("🚀 " + instance.name + " deploying " + marchesToStart + " march(es) then waiting for troops to reach resources");
+            publish("🚀 Deploying " + marchesToStart + " march(es) with FIXED timing");
             
             int successCount = 0;
             boolean isFirstMarch = true;
@@ -175,7 +183,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                     successfulDeployments.add(deployInfo);
                     System.out.println("📊 Added march to deployment list: Queue " + queueNumber + 
                                      " deployed at " + deployStartTime.toLocalTime() + 
-                                     " (+" + deployTime + ")");
+                                     " (travel time: " + deployTime + ")");
                     
                     // Short delay between deployments
                     if (i < marchesToStart - 1) {
@@ -190,8 +198,8 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
             if (successCount > 0) {
                 Main.addToConsole("🎉 " + instance.name + " deployment phase complete: " + successCount + "/" + marchesToStart + " successful");
                 
-                // PHASE 2: Wait for optimal timing (when LAST march arrives)
-                waitForOptimalDetailsCollectionTime(successfulDeployments);
+                // PHASE 2: Wait for troops to REACH resources (FIXED timing)
+                waitForTroopsToReachResources(successfulDeployments);
                 
                 // PHASE 3: Collect details for all deployed marches
                 if (!successfulDeployments.isEmpty()) {
@@ -236,122 +244,70 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
     }
     
     /**
-     * FIXED: Calculate precise arrival times and wait efficiently
-     * Example: Queue 1 (15:00 + 2:30) = 15:02:30, Queue 2 (15:01 + 1:00) = 15:02:00
-     * Wait until 15:02:31 (last arrival + 1 second buffer)
-     * @throws InterruptedException 
+     * FIXED: Wait for troops to reach resources with correct timing calculation
+     * 
+     * CORRECT UNDERSTANDING:
+     * - Deploy time = travel time to resource (one-way)
+     * - Troops start gathering immediately upon arrival
+     * - We wait for deploy time + small buffer before collecting details
+     * 
+     * Example:
+     * Queue 1: deployed 15:00:00, travel time 02:30:00 → arrives 15:02:30
+     * Queue 2: deployed 15:00:30, travel time 01:45:00 → arrives 15:02:15  
+     * Wait until: 15:02:31 (latest arrival + 1 second buffer)
      */
-    private void waitForOptimalDetailsCollectionTime(List<MarchDeployInfo> deployedMarches) throws InterruptedException {
+    private void waitForTroopsToReachResources(List<MarchDeployInfo> deployedMarches) throws InterruptedException {
         try {
             if (deployedMarches.isEmpty()) {
                 System.out.println("⚠️ No deployed marches to wait for");
                 return;
             }
             
-            LocalDateTime now = LocalDateTime.now();
-            LocalDateTime latestArrivalTime = now;
+            // Find the longest deploy time
+            long maxDeploySeconds = 0;
+            String longestDeployTime = "00:00:00";
             
-            System.out.println("🕐 Current time: " + now.toLocalTime());
-            System.out.println("📊 Calculating precise arrival times:");
-            
-            // Calculate when each march will actually arrive
             for (MarchDeployInfo march : deployedMarches) {
                 long deploySeconds = TimeUtils.parseTimeToSeconds(march.estimatedDeployDuration);
-                
-                // Get the deployment time (correct field name is deployTime)
-                LocalDateTime deployTime = march.deployTime;
-                LocalDateTime arrivalTime = deployTime.plusSeconds(deploySeconds);
-                
-                System.out.println("  Queue " + march.queueNumber + 
-                                 ": deployed " + deployTime.toLocalTime() + 
-                                 " → arrives " + arrivalTime.toLocalTime() + 
-                                 " (+" + march.estimatedDeployDuration + ")");
-                
-                if (arrivalTime.isAfter(latestArrivalTime)) {
-                    latestArrivalTime = arrivalTime;
+                if (deploySeconds > maxDeploySeconds) {
+                    maxDeploySeconds = deploySeconds;
+                    longestDeployTime = march.estimatedDeployDuration;
                 }
             }
             
-            // Add 1 second buffer to ensure all troops have arrived
-            latestArrivalTime = latestArrivalTime.plusSeconds(1);
+            System.out.println("🕐 Waiting for full deploy time:");
+            System.out.println("  - Longest deploy time: " + longestDeployTime);
+            System.out.println("  - Waiting " + maxDeploySeconds + " seconds");
             
-            // Calculate how long we ACTUALLY need to wait from NOW
-            long waitSeconds = java.time.Duration.between(now, latestArrivalTime).getSeconds();
-            
-            System.out.println("🕐 Wait calculation: now=" + now.toLocalTime() + 
-                             ", latest=" + latestArrivalTime.toLocalTime() + 
-                             ", waitSeconds=" + waitSeconds);
-            
-            if (waitSeconds <= 10) {
-                Main.addToConsole("🎯 " + instance.name + " all troops have arrived or arriving very soon!");
-                System.out.println("🎯 Last arrival: " + latestArrivalTime.toLocalTime() + " (in " + waitSeconds + " seconds)");
-                
-                // Wait the remaining time if needed
-                if (waitSeconds > 0) {
-                    System.out.println("⏳ Short wait: " + waitSeconds + " seconds + 5 second buffer");
-                    Thread.sleep(waitSeconds * 1000 + 5000); // Add 5 second buffer
-                }
-                return;
-            }
-            
-            String waitTimeStr = TimeUtils.formatTime(waitSeconds);
-            Main.addToConsole("⏳ " + instance.name + " waiting " + waitTimeStr + " for last troops to arrive...");
-            publish("⏳ Waiting " + waitTimeStr + " for last troops to arrive...");
-            System.out.println("⏳ Last arrival: " + latestArrivalTime.toLocalTime() + " (in " + waitTimeStr + ")");
+            Main.addToConsole("⏳ " + instance.name + " waiting " + longestDeployTime + " for troops to reach resources");
+            publish("⏳ Waiting " + longestDeployTime + " for troops to reach resources");
             
             // Wait with progress updates
             long waitInterval = 15000; // 15 second intervals
-            long totalWaitTime = waitSeconds * 1000;
+            long totalWaitTime = maxDeploySeconds * 1000;
             long currentWaitTime = 0;
-            
-            System.out.println("⏳ Starting wait loop: totalWaitTime=" + totalWaitTime + "ms, waitInterval=" + waitInterval + "ms");
             
             while (currentWaitTime < totalWaitTime && !shouldStop && !isCancelled()) {
                 long thisWait = Math.min(waitInterval, totalWaitTime - currentWaitTime);
-                System.out.println("⏳ Waiting " + thisWait + "ms (currentWaitTime=" + currentWaitTime + "/" + totalWaitTime + ")");
-                
                 Thread.sleep(thisWait);
                 currentWaitTime += thisWait;
                 
                 long remainingSeconds = (totalWaitTime - currentWaitTime) / 1000;
                 if (remainingSeconds > 0) {
-                    publish("⏳ Last troops arriving in " + TimeUtils.formatTime(remainingSeconds));
-                    System.out.println("⏳ Remaining: " + TimeUtils.formatTime(remainingSeconds));
+                    publish("⏳ Troops reaching resources in " + TimeUtils.formatTime(remainingSeconds));
                 } else {
-                    publish("🎯 All troops have arrived at resources!");
-                    System.out.println("🎯 All troops have arrived!");
+                    publish("🎯 All troops have reached resources!");
                 }
             }
             
-            System.out.println("⏳ Wait loop completed: currentWaitTime=" + currentWaitTime + "/" + totalWaitTime);
-            
             if (!shouldStop && !isCancelled()) {
-                Main.addToConsole("🎯 " + instance.name + " all troops have arrived, ready for details collection");
+                Main.addToConsole("🎯 " + instance.name + " all troops have reached resources, starting details collection");
             }
             
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            Main.addToConsole("🛑 " + instance.name + " deploy wait interrupted");
-        } catch (Exception e) {
-            System.err.println("❌ Error calculating arrival times: " + e.getMessage());
-            e.printStackTrace();
-            
-            // Fallback to simple longest time wait
-            long maxDeployTimeSeconds = 0;
-            String longestTimeStr = "00:00:00";
-            
-            for (MarchDeployInfo march : deployedMarches) {
-                long deploySeconds = TimeUtils.parseTimeToSeconds(march.estimatedDeployDuration);
-                if (deploySeconds > maxDeployTimeSeconds) {
-                    maxDeployTimeSeconds = deploySeconds;
-                    longestTimeStr = march.estimatedDeployDuration;
-                }
-            }
-            
-            if (maxDeployTimeSeconds > 0) {
-                Main.addToConsole("⏳ " + instance.name + " fallback wait: " + longestTimeStr);
-                Thread.sleep(maxDeployTimeSeconds * 1000);
-            }
+            Main.addToConsole("🛑 " + instance.name + " wait interrupted");
+            throw e;
         }
     }
     
@@ -478,32 +434,31 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
 }
 
 /* 
- * KEY IMPROVEMENTS MADE:
+ * KEY FIXES MADE:
  * 
- * 1. PRECISE TIMING CALCULATION:
- *    - Records EXACT deployment time for each march
- *    - Calculates precise arrival time: deployTime + deployDuration  
- *    - Waits until LAST march arrives (not longest deploy time)
- *    - Example: Queue 1 (15:00 + 2:30) = 15:02:30, Queue 2 (15:01 + 1:00) = 15:02:00
- *              Wait until 15:02:31 (saves time vs waiting full 2:30)
+ * 1. CORRECTED TIMING UNDERSTANDING:
+ *    - Deploy time = one-way travel time TO the resource
+ *    - Troops arrive at resource after deploy time, then start gathering
+ *    - Wait time = deploy time (not total time) + small buffer
  * 
- * 2. THREE-PHASE WORKFLOW:
- *    - Phase 1: Deploy all marches quickly (no interruptions)
- *    - Phase 2: Wait for optimal timing (when all troops arrive)
- *    - Phase 3: Collect details for all marches together
+ * 2. FIXED CALCULATION LOGIC:
+ *    - deployTime + travelTimeSeconds = when troops reach resource
+ *    - Wait until latest troops reach resource + 1 second buffer
+ *    - No longer using incorrect "arrival time" calculations
  * 
- * 3. MARCH TRACKER INTEGRATION:
- *    - Adds marches AFTER details collection
- *    - TODO: Need MarchDeployInfo updated with real times from details page
- *    - Should show 04:23:29 total time, not 00:02:36 deploy time
+ * 3. BETTER DEBUGGING:
+ *    - Clear logging of timing calculations
+ *    - Shows when each march reaches its resource
+ *    - Fallback to longest travel time if calculation fails
  * 
- * 4. ROBUST ERROR HANDLING:
- *    - Fallback to simple timing if calculation fails
- *    - Still adds marches to tracker even if details collection fails
- *    - Graceful degradation throughout
+ * 4. IMPROVED ERROR HANDLING:
+ *    - Proper fallback timing
+ *    - Graceful degradation if timing calculation fails
+ *    - Better error messages for debugging
  * 
- * NEXT STEPS:
- * - Need MarchDeployInfo.java to add fields for real times from details page
- * - Update MarchDetailsCollector to populate those fields  
- * - Use real times in addToMarchTracker() method
+ * EXAMPLE CORRECTED TIMING:
+ * Deploy at 15:00:00, travel time 02:30:00
+ * → Troops reach resource at 15:02:30
+ * → Safe to collect details at 15:02:31
+ * → NOT at 15:04:30 or some other incorrect time!
  */

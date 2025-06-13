@@ -178,90 +178,107 @@ public class MarchDetailsCollector {
         try {
             System.out.println("📊 [DEBUG] Extracting gathering time from details page with extensive debugging...");
             
-            String detailsPagePath = "screenshots/details_page_" + instance.index + ".png";
-            if (!BotUtils.takeScreenshot(instance.index, detailsPagePath)) {
-                System.err.println("❌ Failed to take details page screenshot");
-                return "02:00:00";
-            }
+            // FIXED: Add retries for gathering time extraction
+            int maxRetries = 3;
+            String gatheringTime = null;
+            String screenPath = "screenshots/details_page_" + instance.index + ".png";
             
-            System.out.println("📸 [DEBUG] Details page screenshot saved: " + detailsPagePath);
-            
-            // DEBUG: Try a wide range of coordinates to find the gathering time
-            System.out.println("🔍 [DEBUG] Testing multiple coordinate grids to locate gathering time...");
-            
-            // Test a grid of positions across the details page
-            int[] xPositions = {300, 320, 340, 360, 380, 400, 420};
-            int[] yPositions = {120, 140, 160, 180, 200, 220};
-            int[] widths = {60, 80, 100, 120};
-            int[] heights = {15, 20, 25, 30};
-            
-            String bestResult = null;
-            double bestConfidence = 0;
-            String bestCoordinates = "";
-            
-            int testCount = 0;
-            for (int x : xPositions) {
-                for (int y : yPositions) {
-                    for (int w : widths) {
-                        for (int h : heights) {
-                            testCount++;
-                            String testRegionPath = "screenshots/debug_test_" + testCount + "_" + instance.index + ".png";
-                            
-                            System.out.println("🔍 [DEBUG] Test " + testCount + ": x=" + x + ", y=" + y + ", w=" + w + ", h=" + h);
-                            
-                            if (OCRUtils.extractImageRegion(detailsPagePath, testRegionPath, x, y, w, h)) {
-                                String timeText = OCRUtils.performTimeOCR(testRegionPath, instance.index);
+            for (int retry = 0; retry < maxRetries && gatheringTime == null; retry++) {
+                if (retry > 0) {
+                    System.out.println("🔄 [DEBUG] Retry " + retry + "/" + maxRetries + " for gathering time extraction");
+                    Thread.sleep(2000); // Wait before retry
+                }
+                
+                if (!BotUtils.takeScreenshot(instance.index, screenPath)) {
+                    System.err.println("❌ Failed to take details page screenshot");
+                    continue;
+                }
+                
+                System.out.println("📸 [DEBUG] Details page screenshot saved: " + screenPath);
+                
+                // DEBUG: Try a wide range of coordinates to find the gathering time
+                System.out.println("🔍 [DEBUG] Testing multiple coordinate grids to locate gathering time...");
+                
+                // Test a grid of positions across the details page
+                int[] xPositions = {300, 320, 340, 360, 380, 400, 420};
+                int[] yPositions = {120, 140, 160, 180, 200, 220};
+                int[] widths = {60, 80, 100, 120};
+                int[] heights = {15, 20, 25, 30};
+                
+                String bestResult = null;
+                double bestConfidence = 0;
+                String bestCoordinates = "";
+                
+                int testCount = 0;
+                for (int x : xPositions) {
+                    for (int y : yPositions) {
+                        for (int w : widths) {
+                            for (int h : heights) {
+                                testCount++;
+                                String testRegionPath = "screenshots/debug_test_" + testCount + "_" + instance.index + ".png";
                                 
-                                if (timeText != null && !timeText.trim().isEmpty()) {
-                                    System.out.println("📋 [DEBUG] Test " + testCount + " OCR result: '" + timeText + "'");
+                                System.out.println("🔍 [DEBUG] Test " + testCount + ": x=" + x + ", y=" + y + ", w=" + w + ", h=" + h);
+                                
+                                if (OCRUtils.extractImageRegion(screenPath, testRegionPath, x, y, w, h)) {
+                                    String timeText = OCRUtils.performTimeOCR(testRegionPath, instance.index);
                                     
-                                    String parsedTime = TimeUtils.parseTimeFromText(timeText);
-                                    if (parsedTime != null && TimeUtils.isValidMarchTime(parsedTime)) {
-                                        double confidence = calculateTimeConfidence(timeText, parsedTime);
-                                        System.out.println("✅ [DEBUG] Test " + testCount + " found valid time: " + parsedTime + " (confidence: " + confidence + ")");
+                                    if (timeText != null && !timeText.trim().isEmpty()) {
+                                        System.out.println("📋 [DEBUG] Test " + testCount + " OCR result: '" + timeText + "'");
                                         
-                                        if (confidence > bestConfidence) {
-                                            bestResult = parsedTime;
-                                            bestConfidence = confidence;
-                                            bestCoordinates = "x=" + x + ", y=" + y + ", w=" + w + ", h=" + h;
-                                            System.out.println("⭐ [DEBUG] New best result: " + bestResult + " at " + bestCoordinates);
+                                        String parsedTime = TimeUtils.parseTimeFromText(timeText);
+                                        if (parsedTime != null && TimeUtils.isValidMarchTime(parsedTime)) {
+                                            double confidence = calculateTimeConfidence(timeText, parsedTime);
+                                            System.out.println("✅ [DEBUG] Test " + testCount + " found valid time: " + parsedTime + " (confidence: " + confidence + ")");
+                                            
+                                            if (confidence > bestConfidence) {
+                                                bestResult = parsedTime;
+                                                bestConfidence = confidence;
+                                                bestCoordinates = "x=" + x + ", y=" + y + ", w=" + w + ", h=" + h;
+                                                System.out.println("⭐ [DEBUG] New best result: " + bestResult + " at " + bestCoordinates);
+                                            }
+                                        } else {
+                                            System.out.println("⚠️ [DEBUG] Test " + testCount + " invalid time format: '" + timeText + "'");
                                         }
                                     } else {
-                                        System.out.println("⚠️ [DEBUG] Test " + testCount + " invalid time format: '" + timeText + "'");
+                                        System.out.println("❌ [DEBUG] Test " + testCount + " empty OCR result");
                                     }
                                 } else {
-                                    System.out.println("❌ [DEBUG] Test " + testCount + " empty OCR result");
+                                    System.err.println("❌ [DEBUG] Test " + testCount + " failed to extract region");
                                 }
-                            } else {
-                                System.err.println("❌ [DEBUG] Test " + testCount + " failed to extract region");
+                                
+                                // Limit total tests to avoid too much output
+                                if (testCount >= 50) {
+                                    System.out.println("📊 [DEBUG] Limiting to first 50 tests to avoid spam");
+                                    break;
+                                }
                             }
-                            
-                            // Limit total tests to avoid too much output
-                            if (testCount >= 50) {
-                                System.out.println("📊 [DEBUG] Limiting to first 50 tests to avoid spam");
-                                break;
-                            }
+                            if (testCount >= 50) break;
                         }
                         if (testCount >= 50) break;
                     }
                     if (testCount >= 50) break;
                 }
-                if (testCount >= 50) break;
+                
+                System.out.println("📊 [DEBUG] Completed " + testCount + " coordinate tests");
+                
+                if (bestResult != null) {
+                    System.out.println("🎉 [DEBUG] BEST RESULT FOUND!");
+                    System.out.println("🎯 [DEBUG] Best time: " + bestResult);
+                    System.out.println("📍 [DEBUG] Best coordinates: " + bestCoordinates);
+                    System.out.println("⭐ [DEBUG] Best confidence: " + bestConfidence);
+                    gatheringTime = bestResult;
+                }
             }
             
-            System.out.println("📊 [DEBUG] Completed " + testCount + " coordinate tests");
-            
-            if (bestResult != null) {
+            if (gatheringTime != null) {
                 System.out.println("🎉 [DEBUG] BEST RESULT FOUND!");
-                System.out.println("🎯 [DEBUG] Best time: " + bestResult);
-                System.out.println("📍 [DEBUG] Best coordinates: " + bestCoordinates);
-                System.out.println("⭐ [DEBUG] Best confidence: " + bestConfidence);
-                return bestResult;
+                System.out.println("🎯 [DEBUG] Best time: " + gatheringTime);
+                return gatheringTime;
             }
             
             // DEBUG: Also try enhanced OCR on the full details page
             System.out.println("🔍 [DEBUG] Trying enhanced OCR on full details page...");
-            String fullPageOCR = OCRUtils.performEnhancedOCR(detailsPagePath, instance.index);
+            String fullPageOCR = OCRUtils.performEnhancedOCR(screenPath, instance.index);
             if (fullPageOCR != null) {
                 System.out.println("📋 [DEBUG] Full page OCR result:");
                 System.out.println("=== FULL PAGE OCR START ===");
