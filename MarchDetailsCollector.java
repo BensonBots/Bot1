@@ -5,8 +5,8 @@ import java.awt.Rectangle;
 import java.util.*;
 
 /**
- * FIXED MarchDetailsCollector with correct queue number handling
- * Queue numbers now match exactly what's shown in-game (no conversion)
+ * FIXED MarchDetailsCollector with CORRECTED total time calculation and queue number handling
+ * Total time = gathering time + marching time (NOT gathering + marching*2)
  */
 public class MarchDetailsCollector {
     
@@ -21,7 +21,7 @@ public class MarchDetailsCollector {
      */
     public boolean collectMarchDetailsFromAllDeployedMarches(List<MarchDeployInfo> deployedMarches) {
         try {
-            System.out.println("🔍 Collecting details for " + deployedMarches.size() + " deployed marches (FIXED QUEUE NUMBERS)");
+            System.out.println("🔍 Collecting details for " + deployedMarches.size() + " deployed marches (FIXED QUEUE NUMBERS & TOTAL TIME)");
             
             boolean allSuccessful = true;
             
@@ -147,13 +147,13 @@ public class MarchDetailsCollector {
                 // Store the actual gathering time
                 marchInfo.actualGatheringTime = gatheringTime;
                 
-                // Calculate total time
-                String totalTime = calculateTotalTime(marchInfo.estimatedDeployDuration, gatheringTime);
+                // FIXED: Calculate total time with CORRECT formula
+                String totalTime = calculateTotalTimeFixed(marchInfo.estimatedDeployDuration, gatheringTime);
                 
-                System.out.println("📊 Time calculation for Queue " + marchInfo.queueNumber + " (FIXED):");
-                System.out.println("  - Deploy time: " + marchInfo.estimatedDeployDuration);
+                System.out.println("📊 FIXED Time calculation for Queue " + marchInfo.queueNumber + ":");
+                System.out.println("  - Deploy time (one way): " + marchInfo.estimatedDeployDuration);
                 System.out.println("  - Gathering time: " + gatheringTime);
-                System.out.println("  - Total time: " + totalTime);
+                System.out.println("  - FIXED Total time: " + totalTime + " (gathering + deploy time)");
                 
             } else {
                 System.err.println("⚠️ Could not extract gathering time for Queue " + marchInfo.queueNumber);
@@ -380,18 +380,44 @@ public class MarchDetailsCollector {
         }
     }
     
-    public String calculateTotalTime(String marchTime, String gatheringTime) {
+    /**
+     * FIXED: Calculate total time with CORRECT formula
+     * Total time = gathering time + marching time (NOT gathering + marching*2)
+     * This represents the time from march deployment until troops return home
+     */
+    public String calculateTotalTimeFixed(String marchTime, String gatheringTime) {
         try {
+            System.out.println("🔧 [FIXED] Calculating total time with CORRECT formula...");
+            System.out.println("  Input marching time: " + marchTime);
+            System.out.println("  Input gathering time: " + gatheringTime);
+            
             long marchSeconds = TimeUtils.parseTimeToSeconds(marchTime);
             long gatheringSeconds = TimeUtils.parseTimeToSeconds(gatheringTime);
             
-            long totalSeconds = marchSeconds + gatheringSeconds + marchSeconds;
+            // FIXED: Total time = gathering + marching (NOT gathering + marching*2)
+            // The marching time already represents the round trip time
+            long totalSeconds = gatheringSeconds + marchSeconds;
             
-            return TimeUtils.formatTime(totalSeconds);
+            String result = TimeUtils.formatTime(totalSeconds);
+            
+            System.out.println("🔧 [FIXED] Calculation breakdown:");
+            System.out.println("  - Gathering seconds: " + gatheringSeconds);
+            System.out.println("  - Marching seconds: " + marchSeconds);
+            System.out.println("  - FIXED Total seconds: " + totalSeconds + " (gathering + marching)");
+            System.out.println("  - FIXED Total time: " + result);
+            
+            return result;
             
         } catch (Exception e) {
             System.err.println("❌ Error calculating total time: " + e.getMessage());
             return marchTime;
         }
+    }
+    
+    /**
+     * Legacy method for compatibility - calls the fixed version
+     */
+    public String calculateTotalTime(String marchTime, String gatheringTime) {
+        return calculateTotalTimeFixed(marchTime, gatheringTime);
     }
 }

@@ -5,6 +5,7 @@ import java.awt.Point;
 /**
  * SPEED OPTIMIZED: Handles the UI interactions for starting resource gathering marches
  * Much faster execution with reduced delays and optimized timing
+ * FIXED: Simple popup dismissal with proper timing
  */
 public class ResourceGatheringController {
     private final MemuInstance instance;
@@ -142,16 +143,21 @@ public class ResourceGatheringController {
     }
     
     /**
-     * SPEED OPTIMIZED: Dismiss the search popup
+     * SIMPLE FIX: Just click bottom left area to dismiss popup
      */
     private boolean dismissSearchPopupFast() {
         try {
-            System.out.println("🚫 Dismissing search popup by clicking bottom left area (FAST)...");
+            System.out.println("🚫 Dismissing search popup by clicking bottom left area...");
             
+            // Simple bottom left click
             Point dismissArea = new Point(50, 750);
+            
             if (BotUtils.clickMenu(instance.index, dismissArea)) {
                 System.out.println("✅ Clicked bottom left area to dismiss popup at " + dismissArea);
-                Thread.sleep(1000); // SPEED: 2s → 1s
+                
+                // FIXED: Proper wait time for popup to close
+                Thread.sleep(2500); // Increased from 1000ms to 2500ms
+                
                 return true;
             } else {
                 System.err.println("❌ Failed to click bottom left area to dismiss popup");

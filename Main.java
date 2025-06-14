@@ -554,23 +554,61 @@ public class Main extends JFrame {
             .orElse(null);
     }
 
+    /**
+     * FIXED: Enhanced status updater with hibernation countdown display
+     */
     private void startStatusUpdater() {
-        statusTimer = new javax.swing.Timer(10000, e -> {
+        statusTimer = new javax.swing.Timer(1000, e -> { // Update every second for hibernation countdown
             for (int i = 0; i < instances.size() && i < tableModel.getRowCount(); i++) {
                 MemuInstance inst = instances.get(i);
                 
-                if (Math.random() < 0.5) {
+                // Update hibernation status display with color coding
+                String currentState = inst.getState();
+                String displayStatus = currentState;
+                
+                // FIXED: Enhanced hibernation status with colors and countdown
+                if (currentState.contains("Hibernating - Wake in")) {
+                    // Extract time and format nicely
+                    String timePattern = "Wake in (\\d{2}:\\d{2}:\\d{2})";
+                    java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(timePattern);
+                    java.util.regex.Matcher matcher = pattern.matcher(currentState);
+                    
+                    if (matcher.find()) {
+                        String timeRemaining = matcher.group(1);
+                        displayStatus = "😴 Hibernating ⏰ " + timeRemaining;
+                    } else {
+                        displayStatus = "😴 Hibernating...";
+                    }
+                } else if (currentState.contains("Waking up")) {
+                    displayStatus = "🌅 Waking up...";
+                } else if (currentState.contains("Awake")) {
+                    displayStatus = "☀️ Awake - Ready";
+                } else if (currentState.contains("Starting") || currentState.contains("Deploying")) {
+                    displayStatus = "🚀 " + currentState;
+                } else if (currentState.contains("Collecting")) {
+                    displayStatus = "📊 " + currentState;
+                }
+                
+                // Update table with enhanced status
+                if (!displayStatus.equals(tableModel.getValueAt(i, 2))) {
+                    tableModel.setValueAt(displayStatus, i, 2);
+                }
+                
+                // Also check for actual running status periodically (every 10 seconds)
+                if (Math.random() < 0.1) { // 10% chance per second = roughly every 10 seconds
                     String actualStatus = getInstanceStatus(inst.index);
                     if (!actualStatus.equals(inst.status)) {
                         inst.status = actualStatus;
-                        tableModel.setValueAt(actualStatus, i, 2);
+                        // Don't overwrite hibernation status if it's showing hibernation info
+                        if (!currentState.contains("Hibernating") && !currentState.contains("Waking")) {
+                            tableModel.setValueAt(actualStatus, i, 2);
+                        }
                     }
                 }
             }
         });
         statusTimer.start();
     }
-
     public void saveSettings() {
         try (FileWriter writer = new FileWriter("settings.json")) {
             Gson gson = new GsonBuilder()
