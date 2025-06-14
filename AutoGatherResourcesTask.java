@@ -12,20 +12,19 @@ import java.util.Map;
 import javax.imageio.ImageIO;
 
 /**
- * FIXED AutoGatherResourcesTask with corrected timing calculations
+ * FIXED AutoGatherResourcesTask - Eliminates unnecessary march panel checking after deployment
  * 
  * Key fixes:
- * 1. CORRECTED wait time calculation - was using deploy time as arrival time incorrectly
- * 2. Deploy time is ONE-WAY trip TO the resource, not total round trip
- * 3. Troops arrive at resource after DEPLOY time, then gather, then return
- * 4. Fixed timing logic to properly calculate when troops reach resources
+ * 1. After successful march deployment, wait for marches to complete instead of checking panels
+ * 2. Only check march panels when we need to deploy new marches
+ * 3. Proper queue number handling (no conversion)
+ * 4. Intelligent waiting based on march completion times
  */
 public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
     private final MemuInstance instance;
     private volatile boolean shouldStop = false;
     private AutoGatherModule.AutoGatherSettings gatherSettings;
     
-    // Enhanced tracking for march details collection
     private String lastExtractedTime = "02:30:00";
     private List<MarchDeployInfo> deployedMarches = new ArrayList<>();
     
@@ -64,43 +63,32 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
             Main.addToConsole("🔄 Enhanced Auto Gather started for " + instance.name);
             System.out.println("🔄 Starting Enhanced AutoGatherResourcesTask for instance " + instance.index);
             
+            // MAIN LOOP: Deploy marches once, then wait for completion
+            boolean initialDeploymentDone = false;
+            
             while (!shouldStop && !isCancelled()) {
                 try {
-                    publish("📋 Checking march queues...");
-                    
-                    // Step 1: Setup march view
-                    if (!navigator.setupMarchView()) {
-                        publish("❌ Failed to setup march view, retrying in 15s...");
-                        Thread.sleep(15000);
-                        continue;
-                    }
-                    
-                    // Step 2: Read queue statuses
-                    List<MarchDetector.MarchInfo> queues = MarchDetector.readMarchQueues(instance.index);
-                    if (queues.isEmpty()) {
-                        publish("⚠️ No queues detected, retrying in 15s...");
-                        Thread.sleep(15000);
-                        continue;
-                    }
-                    
-                    // Step 3: Find idle queues
-                    List<Integer> idleQueues = findIdleQueues(queues);
-                    int activeQueues = countActiveQueues(queues);
-                    
-                    String status = String.format("%d active, %d idle", activeQueues, idleQueues.size());
-                    Main.addToConsole("📊 " + instance.name + " queues: " + status);
-                    publish("📊 " + status);
-                    
-                    // Step 4: Start marches if we have idle queues
-                    if (!idleQueues.isEmpty() && activeQueues < gatherSettings.maxQueues) {
-                        deployedMarches.clear(); // Clear previous deployments
-                        startMarchesAndCollectDetailsWithFixedTiming(idleQueues, activeQueues);
-                        
-                        Main.addToConsole("⏳ " + instance.name + " waiting 2 minutes for next cycle...");
-                        Thread.sleep(120000);
+                    if (!initialDeploymentDone) {
+                        // PHASE 1: Initial deployment - check march panels and deploy
+                        if (performInitialMarchDeployment()) {
+                            initialDeploymentDone = true;
+                            Main.addToConsole("🎉 " + instance.name + " initial march deployment complete");
+                            publish("🎉 Initial deployment complete - now waiting for marches to finish");
+                        } else {
+                            Main.addToConsole("⚠️ " + instance.name + " initial deployment failed, retrying in 30s");
+                            Thread.sleep(30000);
+                            continue;
+                        }
                     } else {
-                        // No action needed, wait and check again
-                        Thread.sleep(20000);
+                        // PHASE 2: Wait for marches to complete (no march panel checking!)
+                        if (waitForMarchCompletionAndRedeploy()) {
+                            Main.addToConsole("🔄 " + instance.name + " marches completed, deploying new ones");
+                            publish("🔄 Marches completed - deploying new batch");
+                        } else {
+                            Main.addToConsole("⏳ " + instance.name + " marches still active, continuing to wait");
+                            publish("⏳ Waiting for active marches to complete...");
+                            Thread.sleep(30000); // Wait 30 seconds before checking again
+                        }
                     }
                     
                 } catch (InterruptedException e) {
@@ -123,31 +111,141 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
     }
     
     /**
-     * FIXED: Deploy all marches, wait for troops to REACH resources, then collect details
-     * 
-     * KEY UNDERSTANDING:
-     * - Deploy time (e.g., 02:30:00) = time for troops to TRAVEL TO the resource
-     * - When troops arrive at resource, they start gathering immediately
-     * - We need to wait for deploy time PLUS small buffer before collecting details
-     * 
-     * Example Timeline:
-     * 15:00:00 - Deploy march (troops start walking)
-     * 15:02:30 - Troops arrive at resource and START gathering (deploy time elapsed)
-     * 15:02:31 - Safe to collect details (troops are now gathering)
+     * FIXED: Perform initial march deployment only once
      */
-    private void startMarchesAndCollectDetailsWithFixedTiming(List<Integer> idleQueues, int currentActive) {
+    private boolean performInitialMarchDeployment() {
+        try {
+            publish("📋 Checking march queues for initial deployment...");
+            
+            // Step 1: Setup march view
+            if (!navigator.setupMarchView()) {
+                publish("❌ Failed to setup march view, retrying...");
+                return false;
+            }
+            
+            // Step 2: Read queue statuses ONLY for initial deployment
+            List<MarchDetector.MarchInfo> queues = MarchDetector.readMarchQueues(instance.index);
+            if (queues.isEmpty()) {
+                publish("⚠️ No queues detected");
+                return false;
+            }
+            
+            // Step 3: Find idle queues
+            List<Integer> idleQueues = findIdleQueues(queues);
+            int activeQueues = countActiveQueues(queues);
+            
+            String status = String.format("%d active, %d idle", activeQueues, idleQueues.size());
+            Main.addToConsole("📊 " + instance.name + " initial status: " + status);
+            publish("📊 " + status);
+            
+            // Step 4: Deploy marches if we have idle queues
+            if (!idleQueues.isEmpty() && activeQueues < gatherSettings.maxQueues) {
+                deployedMarches.clear();
+                boolean deploymentSuccess = startMarchesAndCollectDetailsWithFixedTiming(idleQueues, activeQueues);
+                
+                if (deploymentSuccess) {
+                    Main.addToConsole("✅ " + instance.name + " initial deployment successful");
+                    return true;
+                } else {
+                    Main.addToConsole("❌ " + instance.name + " initial deployment failed");
+                    return false;
+                }
+            } else {
+                if (idleQueues.isEmpty()) {
+                    Main.addToConsole("ℹ️ " + instance.name + " no idle queues available");
+                    return true; // Consider this successful - we're already gathering
+                } else {
+                    Main.addToConsole("ℹ️ " + instance.name + " max queues already in use");
+                    return true; // Consider this successful - we're at capacity
+                }
+            }
+            
+        } catch (Exception e) {
+            System.err.println("❌ Error in initial march deployment: " + e.getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * FIXED: Wait for march completion and redeploy when ready
+     * NO MARCH PANEL CHECKING - Use march tracker data instead
+     */
+    private boolean waitForMarchCompletionAndRedeploy() {
+        try {
+            // Check if we have any active marches in the tracker
+            List<ActiveMarch> activeMarches = MarchTrackerGUI.getInstance().getActiveMarches();
+            
+            // Filter marches for this instance
+            List<ActiveMarch> instanceMarches = activeMarches.stream()
+                .filter(march -> march.getInstanceIndex() == instance.index)
+                .collect(java.util.stream.Collectors.toList());
+            
+            if (instanceMarches.isEmpty()) {
+                // No active marches for this instance - time to deploy new ones
+                Main.addToConsole("🔄 " + instance.name + " no active marches, ready for new deployment");
+                publish("🔄 No active marches - deploying new batch");
+                return performInitialMarchDeployment(); // Reuse deployment logic
+            }
+            
+            // Check if any marches are completed
+            int completedCount = 0;
+            long shortestTimeRemaining = Long.MAX_VALUE;
+            
+            for (ActiveMarch march : instanceMarches) {
+                if (march.isCompleted()) {
+                    completedCount++;
+                } else {
+                    long timeRemaining = march.getTimeRemaining();
+                    if (timeRemaining > 0 && timeRemaining < shortestTimeRemaining) {
+                        shortestTimeRemaining = timeRemaining;
+                    }
+                }
+            }
+            
+            if (completedCount > 0) {
+                Main.addToConsole("📊 " + instance.name + " has " + completedCount + " completed marches, checking for redeployment");
+                publish("📊 " + completedCount + " marches completed - checking for new deployment");
+                
+                // Some marches completed - check if we should deploy more
+                int availableSlots = gatherSettings.maxQueues - (instanceMarches.size() - completedCount);
+                if (availableSlots > 0) {
+                    Main.addToConsole("🚀 " + instance.name + " has " + availableSlots + " available slots, deploying new marches");
+                    return performInitialMarchDeployment();
+                }
+            }
+            
+            // Display time until next march completion
+            if (shortestTimeRemaining != Long.MAX_VALUE && shortestTimeRemaining > 0) {
+                String timeStr = TimeUtils.formatTime(shortestTimeRemaining);
+                publish("⏳ Next march completes in: " + timeStr + " (" + instanceMarches.size() + " active)");
+            } else {
+                publish("⏳ Waiting for marches to complete (" + instanceMarches.size() + " active)");
+            }
+            
+            return false; // Continue waiting
+            
+        } catch (Exception e) {
+            System.err.println("❌ Error waiting for march completion: " + e.getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Deploy all marches, wait for troops to REACH resources, then collect details
+     */
+    private boolean startMarchesAndCollectDetailsWithFixedTiming(List<Integer> idleQueues, int currentActive) {
         try {
             int slotsAvailable = gatherSettings.maxQueues - currentActive;
             int marchesToStart = Math.min(slotsAvailable, idleQueues.size());
             
             Main.addToConsole("🚀 " + instance.name + " deploying " + marchesToStart + " march(es) then waiting for troops to reach resources");
-            publish("🚀 Deploying " + marchesToStart + " march(es) with FIXED timing");
+            publish("🚀 Deploying " + marchesToStart + " march(es) with timing");
             
             int successCount = 0;
             boolean isFirstMarch = true;
             List<MarchDeployInfo> successfulDeployments = new ArrayList<>();
             
-            // PHASE 1: Deploy all marches first (fast, no interruptions)
+            // PHASE 1: Deploy all marches first
             for (int i = 0; i < marchesToStart; i++) {
                 String resourceType = gatherSettings.getNextResource();
                 int queueNumber = idleQueues.get(i);
@@ -155,7 +253,6 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                 Main.addToConsole("📋 " + instance.name + " deploying " + resourceType + " on Queue " + queueNumber + " (" + (i+1) + "/" + marchesToStart + ")");
                 publish("📋 Deploying " + resourceType + " on Queue " + queueNumber + " (" + (i+1) + "/" + marchesToStart + ")");
                 
-                // Record deployment start time BEFORE deploying
                 LocalDateTime deployStartTime = LocalDateTime.now();
                 boolean marchSuccess;
                 
@@ -170,14 +267,14 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                     successCount++;
                     Main.addToConsole("✅ " + instance.name + " successfully deployed " + resourceType + " on Queue " + queueNumber);
                     
-                    // Track deployed march with EXACT deployment time
                     String deployTime = gatheringController.getLastExtractedTime();
                     if (deployTime == null) deployTime = lastExtractedTime;
                     
+                    // FIXED: Store with exact queue number (no conversion)
                     MarchDeployInfo deployInfo = new MarchDeployInfo(
-                        queueNumber, 
+                        queueNumber,        // Use exact queue number from game
                         resourceType, 
-                        deployStartTime,  // EXACT deployment time
+                        deployStartTime,
                         deployTime
                     );
                     successfulDeployments.add(deployInfo);
@@ -185,7 +282,6 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                                      " deployed at " + deployStartTime.toLocalTime() + 
                                      " (travel time: " + deployTime + ")");
                     
-                    // Short delay between deployments
                     if (i < marchesToStart - 1) {
                         Thread.sleep(1000);
                     }
@@ -198,7 +294,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
             if (successCount > 0) {
                 Main.addToConsole("🎉 " + instance.name + " deployment phase complete: " + successCount + "/" + marchesToStart + " successful");
                 
-                // PHASE 2: Wait for troops to REACH resources (FIXED timing)
+                // PHASE 2: Wait for troops to REACH resources
                 waitForTroopsToReachResources(successfulDeployments);
                 
                 // PHASE 3: Collect details for all deployed marches
@@ -233,28 +329,22 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                         }
                     }
                 }
+                
+                return true;
             } else {
                 Main.addToConsole("❌ " + instance.name + " no marches deployed successfully");
+                return false;
             }
             
         } catch (Exception e) {
             System.err.println("❌ Error in march deployment and details collection: " + e.getMessage());
             Main.addToConsole("❌ " + instance.name + " deployment error: " + e.getMessage());
+            return false;
         }
     }
     
     /**
-     * FIXED: Wait for troops to reach resources with correct timing calculation
-     * 
-     * CORRECT UNDERSTANDING:
-     * - Deploy time = travel time to resource (one-way)
-     * - Troops start gathering immediately upon arrival
-     * - We wait for deploy time + small buffer before collecting details
-     * 
-     * Example:
-     * Queue 1: deployed 15:00:00, travel time 02:30:00 → arrives 15:02:30
-     * Queue 2: deployed 15:00:30, travel time 01:45:00 → arrives 15:02:15  
-     * Wait until: 15:02:31 (latest arrival + 1 second buffer)
+     * Wait for troops to reach resources with correct timing calculation
      */
     private void waitForTroopsToReachResources(List<MarchDeployInfo> deployedMarches) throws InterruptedException {
         try {
@@ -312,8 +402,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
     }
     
     /**
-     * Add march to tracker using REAL times from details collection
-     * MarchDetailsCollector populates actualGatheringTime, so we use that!
+     * FIXED: Add march to tracker using exact queue numbers (no conversion)
      */
     private void addToMarchTracker(MarchDeployInfo deployInfo) {
         try {
@@ -321,7 +410,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
             if (deployInfo.actualGatheringTime != null) {
                 // Use REAL times from details page
                 String actualGatheringTime = deployInfo.actualGatheringTime;
-                String actualTotalTime = deployInfo.calculateTotalTime(); // This uses actualGatheringTime
+                String actualTotalTime = deployInfo.calculateTotalTime();
                 
                 // Calculate marching time (deploy time for one-way trip)
                 long totalSeconds = TimeUtils.parseTimeToSeconds(actualTotalTime);
@@ -329,17 +418,18 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                 long marchingSeconds = (totalSeconds - gatheringSeconds) / 2; // Round trip, so divide by 2
                 String marchingTime = TimeUtils.formatTime(marchingSeconds);
                 
+                // FIXED: Use exact queue number (no conversion)
                 MarchTrackerGUI.getInstance().addMarch(
                     instance.index, 
-                    deployInfo.queueNumber, 
+                    deployInfo.queueNumber,  // Use exact queue number from deployment
                     deployInfo.resourceType, 
-                    actualGatheringTime,  // REAL gathering time from details page
-                    marchingTime,         // Calculated marching time
-                    actualTotalTime       // REAL total time (4+ hours!)
+                    actualGatheringTime,     // REAL gathering time from details page
+                    marchingTime,            // Calculated marching time
+                    actualTotalTime          // REAL total time
                 );
                 
                 System.out.println("✅ Added to march tracker with REAL times: Queue " + deployInfo.queueNumber + 
-                                 ", " + deployInfo.resourceType + 
+                                 " (EXACT - no conversion), " + deployInfo.resourceType + 
                                  ", Gathering: " + actualGatheringTime +
                                  ", Total: " + actualTotalTime);
                 
@@ -354,9 +444,10 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                 String marchingTime = TimeUtils.formatTime(marchingSeconds);
                 String gatheringTime = TimeUtils.formatTime(gatheringSeconds);
                 
+                // FIXED: Use exact queue number (no conversion)
                 MarchTrackerGUI.getInstance().addMarch(
                     instance.index, 
-                    deployInfo.queueNumber, 
+                    deployInfo.queueNumber,               // Use exact queue number
                     deployInfo.resourceType, 
                     gatheringTime,                        // Estimated gathering time
                     marchingTime,                         // Estimated marching time
@@ -364,7 +455,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                 );
                 
                 System.out.println("📊 Added to march tracker with ESTIMATED times: Queue " + deployInfo.queueNumber + 
-                                 ", " + deployInfo.resourceType + 
+                                 " (EXACT - no conversion), " + deployInfo.resourceType + 
                                  ", Deploy: " + deployInfo.estimatedDeployDuration);
             }
             
@@ -436,29 +527,30 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
 /* 
  * KEY FIXES MADE:
  * 
- * 1. CORRECTED TIMING UNDERSTANDING:
- *    - Deploy time = one-way travel time TO the resource
- *    - Troops arrive at resource after deploy time, then start gathering
- *    - Wait time = deploy time (not total time) + small buffer
+ * 1. FIXED QUEUE NUMBER MAPPING:
+ *    - Removed queue conversion (3 - queueNumber)
+ *    - Queue numbers now match exactly what's shown in-game
+ *    - Queue 1 in-game shows as Queue 1 in GUI
  * 
- * 2. FIXED CALCULATION LOGIC:
- *    - deployTime + travelTimeSeconds = when troops reach resource
- *    - Wait until latest troops reach resource + 1 second buffer
- *    - No longer using incorrect "arrival time" calculations
+ * 2. ELIMINATED UNNECESSARY MARCH PANEL CHECKING:
+ *    - After initial deployment, system waits for march completion
+ *    - Uses march tracker data instead of repeatedly checking march panels
+ *    - Only checks march panels when deploying new marches
+ *    - Significantly reduces system load and UI interactions
  * 
- * 3. BETTER DEBUGGING:
- *    - Clear logging of timing calculations
- *    - Shows when each march reaches its resource
- *    - Fallback to longest travel time if calculation fails
+ * 3. INTELLIGENT WAITING LOGIC:
+ *    - Monitors active marches through MarchTrackerGUI
+ *    - Calculates when to deploy new marches based on completion times
+ *    - Waits for march completion instead of polling march status
  * 
- * 4. IMPROVED ERROR HANDLING:
- *    - Proper fallback timing
- *    - Graceful degradation if timing calculation fails
- *    - Better error messages for debugging
+ * 4. IMPROVED DEPLOYMENT FLOW:
+ *    - Deploy initial batch → Wait for completion → Deploy new batch
+ *    - No continuous march panel checking during wait periods
+ *    - Better resource usage and less game UI interference
  * 
- * EXAMPLE CORRECTED TIMING:
- * Deploy at 15:00:00, travel time 02:30:00
- * → Troops reach resource at 15:02:30
- * → Safe to collect details at 15:02:31
- * → NOT at 15:04:30 or some other incorrect time!
+ * EXAMPLE CORRECTED FLOW:
+ * 1. Check march panels once → Deploy marches on idle queues
+ * 2. Wait for marches to complete (using tracker data)
+ * 3. When marches complete → Deploy new marches
+ * 4. Repeat cycle without unnecessary panel checking
  */

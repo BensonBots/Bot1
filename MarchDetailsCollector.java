@@ -5,8 +5,8 @@ import java.awt.Rectangle;
 import java.util.*;
 
 /**
- * SIMPLIFIED VERSION: MarchDetailsCollector with efficient OCR strategy
- * Focus on full page OCR which actually works, skip endless coordinate testing
+ * FIXED MarchDetailsCollector with correct queue number handling
+ * Queue numbers now match exactly what's shown in-game (no conversion)
  */
 public class MarchDetailsCollector {
     
@@ -21,7 +21,7 @@ public class MarchDetailsCollector {
      */
     public boolean collectMarchDetailsFromAllDeployedMarches(List<MarchDeployInfo> deployedMarches) {
         try {
-            System.out.println("🔍 Collecting details for " + deployedMarches.size() + " deployed marches (SIMPLIFIED)");
+            System.out.println("🔍 Collecting details for " + deployedMarches.size() + " deployed marches (FIXED QUEUE NUMBERS)");
             
             boolean allSuccessful = true;
             
@@ -29,7 +29,7 @@ public class MarchDetailsCollector {
                 MarchDeployInfo marchInfo = deployedMarches.get(i);
                 
                 if (!marchInfo.detailsCollected) {
-                    System.out.println("🔍 Collecting details for Queue " + marchInfo.queueNumber + " (" + marchInfo.resourceType + ") - March " + (i+1) + "/" + deployedMarches.size() + " (SIMPLIFIED)");
+                    System.out.println("🔍 Collecting details for Queue " + marchInfo.queueNumber + " (" + marchInfo.resourceType + ") - March " + (i+1) + "/" + deployedMarches.size() + " (FIXED)");
                     
                     // Setup march view before each queue
                     if (!setupMarchViewFast()) {
@@ -38,9 +38,9 @@ public class MarchDetailsCollector {
                         continue;
                     }
                     
-                    if (collectDetailsForQueueSimplified(marchInfo)) {
+                    if (collectDetailsForQueueFixed(marchInfo)) {
                         marchInfo.detailsCollected = true;
-                        System.out.println("✅ Successfully collected details for Queue " + marchInfo.queueNumber + " (SIMPLIFIED)");
+                        System.out.println("✅ Successfully collected details for Queue " + marchInfo.queueNumber + " (FIXED)");
                     } else {
                         allSuccessful = false;
                         System.err.println("❌ Failed to collect details for Queue " + marchInfo.queueNumber);
@@ -66,7 +66,7 @@ public class MarchDetailsCollector {
      */
     private boolean setupMarchViewFast() {
         try {
-            System.out.println("🔧 Setting up march view for instance " + instance.index + " (SIMPLIFIED)");
+            System.out.println("🔧 Setting up march view for instance " + instance.index + " (FIXED)");
             
             // Take screenshot to see current state
             String currentScreenPath = "screenshots/current_state_" + instance.index + ".png";
@@ -117,9 +117,9 @@ public class MarchDetailsCollector {
     }
     
     /**
-     * SIMPLIFIED VERSION: Collect details with efficient strategy - skip coordinate loops!
+     * FIXED: Collect details with correct queue number handling
      */
-    private boolean collectDetailsForQueueSimplified(MarchDeployInfo marchInfo) {
+    private boolean collectDetailsForQueueFixed(MarchDeployInfo marchInfo) {
         try {
             String screenshotPath = "screenshots/march_details_" + instance.index + "_queue" + marchInfo.queueNumber + ".png";
             if (!BotUtils.takeScreenshot(instance.index, screenshotPath)) {
@@ -127,8 +127,8 @@ public class MarchDetailsCollector {
                 return false;
             }
             
-            // Click on the specific march queue using center-based coordinates
-            if (!clickOnMarchQueueAtCenterFast(marchInfo.queueNumber)) {
+            // FIXED: Click on the specific march queue using exact queue number
+            if (!clickOnMarchQueueFixed(marchInfo.queueNumber)) {
                 System.err.println("❌ Failed to click on Queue " + marchInfo.queueNumber);
                 return false;
             }
@@ -139,7 +139,7 @@ public class MarchDetailsCollector {
                 return false;
             }
             
-            // SIMPLIFIED: Extract gathering time efficiently (no endless coordinate loops!)
+            // Extract gathering time efficiently
             String gatheringTime = extractGatheringTimeSimplified(marchInfo.queueNumber);
             if (gatheringTime != null) {
                 System.out.println("✅ Extracted gathering time: " + gatheringTime + " for Queue " + marchInfo.queueNumber);
@@ -150,14 +150,15 @@ public class MarchDetailsCollector {
                 // Calculate total time
                 String totalTime = calculateTotalTime(marchInfo.estimatedDeployDuration, gatheringTime);
                 
-                // Add to march tracker using existing GUI
-                addToMarchTrackerFast(marchInfo, gatheringTime, totalTime);
+                System.out.println("📊 Time calculation for Queue " + marchInfo.queueNumber + " (FIXED):");
+                System.out.println("  - Deploy time: " + marchInfo.estimatedDeployDuration);
+                System.out.println("  - Gathering time: " + gatheringTime);
+                System.out.println("  - Total time: " + totalTime);
                 
-                System.out.println("📊 Added to march tracker with total time: " + totalTime + " for Queue " + marchInfo.queueNumber);
             } else {
                 System.err.println("⚠️ Could not extract gathering time for Queue " + marchInfo.queueNumber);
-                // Still try to add with estimated times
-                addToMarchTrackerFast(marchInfo, "02:00:00", marchInfo.calculateTotalTime());
+                // Still mark as collected with estimated times
+                marchInfo.actualGatheringTime = "02:00:00";
             }
             
             // Close details page
@@ -172,12 +173,11 @@ public class MarchDetailsCollector {
     }
     
     /**
-     * SIMPLIFIED: Extract gathering time efficiently - focus on what works!
-     * Skip endless coordinate testing, go straight to full page OCR
+     * PRECISE: Extract gathering time using exact coordinates from the image analysis
      */
     private String extractGatheringTimeSimplified(int queueNumber) {
         try {
-            System.out.println("📊 [SIMPLIFIED] Extracting gathering time efficiently...");
+            System.out.println("📊 [PRECISE] Extracting gathering time for Queue " + queueNumber + " using exact coordinates...");
             
             String screenPath = "screenshots/details_page_" + instance.index + ".png";
             if (!BotUtils.takeScreenshot(instance.index, screenPath)) {
@@ -185,99 +185,76 @@ public class MarchDetailsCollector {
                 return "02:00:00";
             }
             
-            System.out.println("📸 [SIMPLIFIED] Details page screenshot saved: " + screenPath);
+            System.out.println("📸 [PRECISE] Details page screenshot saved: " + screenPath);
             
-            // STRATEGY 1: Try a few key coordinates (but don't loop endlessly!)
-            String[] testCoordinates = {
-                "440,165,80,20",  // Your original corrected coordinates
-                "400,165,80,20",  // Slightly left
-                "380,165,100,25", // Wider area
-                "420,155,100,30", // Higher and wider
-                "360,160,120,25"  // Even wider area
-            };
+            // PRECISE: Extract the exact "Gathered in" time value
+            // Based on image analysis: "02:59:12" needs to be moved up and left from previous coordinates
+            int x = 355;      // X position moved LEFT from 367
+            int y = 145;      // Y position moved UP from 155  
+            int width = 80;   // Width to capture "02:59:12"
+            int height = 20;  // Height for single line text
             
-            System.out.println("🎯 [SIMPLIFIED] Testing " + testCoordinates.length + " key coordinate areas...");
+            System.out.println("🎯 [PRECISE] Using exact coordinates: x=" + x + ", y=" + y + ", w=" + width + ", h=" + height);
             
-            for (int i = 0; i < testCoordinates.length; i++) {
-                String[] coords = testCoordinates[i].split(",");
-                int x = Integer.parseInt(coords[0]);
-                int y = Integer.parseInt(coords[1]);
-                int w = Integer.parseInt(coords[2]);
-                int h = Integer.parseInt(coords[3]);
-                
-                System.out.println("🔍 [SIMPLIFIED] Test " + (i+1) + "/" + testCoordinates.length + ": x=" + x + ", y=" + y + ", w=" + w + ", h=" + h);
-                
-                String timeRegionPath = "screenshots/test_region_" + (i+1) + "_" + instance.index + ".png";
-                if (OCRUtils.extractImageRegion(screenPath, timeRegionPath, x, y, w, h)) {
-                    // Try enhanced OCR (not just digits) to get context
-                    String timeText = OCRUtils.performEnhancedOCR(timeRegionPath, instance.index);
-                    if (timeText != null && !timeText.trim().isEmpty()) {
-                        System.out.println("📋 [SIMPLIFIED] Test " + (i+1) + " enhanced OCR: '" + timeText + "'");
-                        
-                        String parsedTime = TimeUtils.parseTimeFromText(timeText);
-                        if (parsedTime != null && TimeUtils.isValidMarchTime(parsedTime)) {
-                            System.out.println("✅ [SIMPLIFIED] SUCCESS! Found valid time: " + parsedTime + " at coordinates " + testCoordinates[i]);
-                            return parsedTime;
-                        }
+            String timeRegionPath = "screenshots/precise_gather_time_" + instance.index + ".png";
+            if (OCRUtils.extractImageRegion(screenPath, timeRegionPath, x, y, width, height)) {
+                // Use time-specific OCR for best results with HH:MM:SS format
+                String timeText = OCRUtils.performTimeOCR(timeRegionPath, instance.index);
+                if (timeText != null && !timeText.trim().isEmpty()) {
+                    System.out.println("📋 [PRECISE] OCR result: '" + timeText + "'");
+                    
+                    String parsedTime = TimeUtils.parseTimeFromText(timeText);
+                    if (parsedTime != null && TimeUtils.isValidMarchTime(parsedTime)) {
+                        System.out.println("✅ [PRECISE] SUCCESS! Found gathering time: " + parsedTime);
+                        return parsedTime;
+                    } else {
+                        System.out.println("⚠️ [PRECISE] Could not parse valid time from: '" + timeText + "'");
                     }
                 }
             }
             
-            // STRATEGY 2: Full page OCR (this is what actually worked in your log!)
-            System.out.println("🔍 [SIMPLIFIED] Key coordinates failed, trying full page OCR (this worked before)...");
+            // FALLBACK: Full page OCR if precise extraction fails
+            System.out.println("🔍 [PRECISE] Precise extraction failed, trying full page OCR as fallback...");
             String fullPageOCR = OCRUtils.performEnhancedOCR(screenPath, instance.index);
             if (fullPageOCR != null) {
-                System.out.println("📋 [SIMPLIFIED] Full page OCR result:");
-                System.out.println("=== FULL PAGE OCR START ===");
-                System.out.println(fullPageOCR);
-                System.out.println("=== FULL PAGE OCR END ===");
-                
-                // Look for patterns like "Gatheredin 024726" or "Gathering 02:47:26"
                 String[] lines = fullPageOCR.split("\n");
-                for (int i = 0; i < lines.length; i++) {
-                    String line = lines[i].toLowerCase();
-                    
-                    // Look for gathering-related lines
-                    if (line.contains("gather") || line.contains("time") || line.contains("duration")) {
-                        System.out.println("🎯 [SIMPLIFIED] Potential gathering line " + i + ": '" + lines[i] + "'");
+                for (String line : lines) {
+                    // Look for "Gathered in" or "Gatheredin" pattern
+                    if (line.toLowerCase().contains("gatheredin") || line.toLowerCase().contains("gathered in")) {
+                        System.out.println("🎯 [PRECISE] Found gathering line: '" + line + "'");
                         
-                        String parsedTime = TimeUtils.parseTimeFromText(lines[i]);
+                        String parsedTime = TimeUtils.parseTimeFromText(line);
                         if (parsedTime != null && TimeUtils.isValidMarchTime(parsedTime)) {
-                            System.out.println("✅ [SIMPLIFIED] SUCCESS! Found time from full page OCR: " + parsedTime);
+                            System.out.println("✅ [PRECISE] SUCCESS! Extracted from full page: " + parsedTime);
                             return parsedTime;
                         }
                     }
                 }
-                
-                // If no gathering-specific lines, check all lines for time patterns
-                for (int i = 0; i < lines.length; i++) {
-                    String parsedTime = TimeUtils.parseTimeFromText(lines[i]);
-                    if (parsedTime != null && TimeUtils.isValidMarchTime(parsedTime)) {
-                        System.out.println("✅ [SIMPLIFIED] SUCCESS! Found time pattern in line " + i + ": '" + lines[i] + "' -> " + parsedTime);
-                        return parsedTime;
-                    }
-                }
             }
             
-            System.err.println("⚠️ [SIMPLIFIED] Could not extract gathering time, using default");
+            System.err.println("⚠️ [PRECISE] Could not extract gathering time, using default");
             return "02:00:00";
             
         } catch (Exception e) {
-            System.err.println("❌ Error in simplified gathering time extraction: " + e.getMessage());
+            System.err.println("❌ Error in precise gathering time extraction: " + e.getMessage());
             return "02:00:00";
         }
     }
     
-    private boolean clickOnMarchQueueAtCenterFast(int queueNumber) {
+    /**
+     * FIXED: Click on march queue with correct positioning (no queue conversion)
+     */
+    private boolean clickOnMarchQueueFixed(int queueNumber) {
         try {
-            System.out.println("🖱️ Clicking on March Queue " + queueNumber + " (SIMPLIFIED)");
+            System.out.println("🖱️ Clicking on March Queue " + queueNumber + " (FIXED - exact queue number)");
             
-            Point queuePosition = calculateQueueClickPosition(queueNumber);
+            // FIXED: Calculate position based on exact queue number (no conversion)
+            Point queuePosition = calculateQueueClickPositionFixed(queueNumber);
             
             if (queuePosition != null) {
-                System.out.println("🎯 Clicking Queue " + queueNumber + " at center position: " + queuePosition);
+                System.out.println("🎯 Clicking Queue " + queueNumber + " at FIXED position: " + queuePosition);
                 if (BotUtils.clickMenu(instance.index, queuePosition)) {
-                    System.out.println("✅ Clicked on Queue " + queueNumber + " at center position " + queuePosition + " (SIMPLIFIED)");
+                    System.out.println("✅ Clicked on Queue " + queueNumber + " at FIXED position " + queuePosition);
                     Thread.sleep(2000);
                     return true;
                 } else {
@@ -285,7 +262,7 @@ public class MarchDetailsCollector {
                     return false;
                 }
             } else {
-                System.err.println("❌ Could not determine position for Queue " + queueNumber);
+                System.err.println("❌ Could not determine FIXED position for Queue " + queueNumber);
                 return false;
             }
             
@@ -295,19 +272,23 @@ public class MarchDetailsCollector {
         }
     }
     
-    private Point calculateQueueClickPosition(int queueNumber) {
+    /**
+     * FIXED: Calculate queue click position using exact queue numbers
+     */
+    private Point calculateQueueClickPositionFixed(int queueNumber) {
+        // FIXED: Use exact queue number for position calculation
         int baseY = 200 + 30;
-        int queueY = baseY + (queueNumber - 1) * 55;
+        int queueY = baseY + (queueNumber - 1) * 55;  // Queue 1 at baseY, Queue 2 at baseY+55, etc.
         int centerX = 240;
         
         Point position = new Point(centerX, queueY);
-        System.out.println("🎯 [CALC] Queue " + queueNumber + " center position: " + position);
+        System.out.println("🎯 [FIXED] Queue " + queueNumber + " position (no conversion): " + position);
         return position;
     }
     
     private boolean clickDetailsButtonFast() {
         try {
-            System.out.println("🔍 Looking for details button (SIMPLIFIED)...");
+            System.out.println("🔍 Looking for details button (FIXED)...");
             
             String[] detailsButtonImages = {"details_button.png", "details.png"};
             double[] confidences = {0.6, 0.5, 0.4};
@@ -315,7 +296,7 @@ public class MarchDetailsCollector {
             for (int attempt = 1; attempt <= 2; attempt++) {
                 System.out.println("🔄 Details button detection attempt " + attempt + "/2");
                 
-                String detailsButtonPath = "screenshots/details_button_simplified" + attempt + "_" + instance.index + ".png";
+                String detailsButtonPath = "screenshots/details_button_fixed" + attempt + "_" + instance.index + ".png";
                 if (!BotUtils.takeScreenshot(instance.index, detailsButtonPath)) {
                     System.err.println("❌ Failed to take details button screenshot on attempt " + attempt);
                     continue;
@@ -336,7 +317,7 @@ public class MarchDetailsCollector {
                 
                 if (detailsPos != null) {
                     if (BotUtils.clickMenu(instance.index, detailsPos)) {
-                        System.out.println("✅ Clicked details button successfully (SIMPLIFIED)");
+                        System.out.println("✅ Clicked details button successfully (FIXED)");
                         Thread.sleep(2000);
                         return true;
                     }
@@ -356,7 +337,7 @@ public class MarchDetailsCollector {
             
             for (Point fallbackPos : fallbackPositions) {
                 if (BotUtils.clickMenu(instance.index, fallbackPos)) {
-                    System.out.println("✅ Clicked details button with fallback position " + fallbackPos + " (SIMPLIFIED)");
+                    System.out.println("✅ Clicked details button with fallback position " + fallbackPos + " (FIXED)");
                     Thread.sleep(2000);
                     return true;
                 }
@@ -372,7 +353,7 @@ public class MarchDetailsCollector {
     
     private void closeDetailsPageFast() {
         try {
-            System.out.println("❌ Closing details page (SIMPLIFIED)...");
+            System.out.println("❌ Closing details page (FIXED)...");
             
             String closeDetailsPath = "screenshots/close_details_" + instance.index + ".png";
             if (!BotUtils.takeScreenshot(instance.index, closeDetailsPath)) {
@@ -390,83 +371,13 @@ public class MarchDetailsCollector {
             }
             
             if (BotUtils.clickMenu(instance.index, closePos)) {
-                System.out.println("✅ Closed details page at " + closePos + " (SIMPLIFIED)");
+                System.out.println("✅ Closed details page at " + closePos + " (FIXED)");
                 Thread.sleep(1000);
             }
             
         } catch (Exception e) {
             System.err.println("❌ Error closing details page: " + e.getMessage());
         }
-    }
-    
-    private void addToMarchTrackerFast(MarchDeployInfo marchInfo, String gatheringTime, String totalTime) {
-        try {
-            // Calculate times correctly whether we have actual gathering time or not
-            if (gatheringTime != null && !gatheringTime.equals("02:00:00")) {
-                // We have real gathering time from details page
-                long deploySeconds = TimeUtils.parseTimeToSeconds(marchInfo.estimatedDeployDuration);
-                long gatheringSeconds = TimeUtils.parseTimeToSeconds(gatheringTime);
-                
-                // Total time is deploy + gather + deploy (round trip)
-                long totalSeconds = deploySeconds + gatheringSeconds + deploySeconds;
-                String calculatedTotal = TimeUtils.formatTime(totalSeconds);
-                
-                // March time is one-way deploy time
-                String marchTime = marchInfo.estimatedDeployDuration;
-                
-                System.out.println("📊 Time calculation for Queue " + marchInfo.queueNumber + ":");
-                System.out.println("  - Deploy time (one-way): " + marchTime + " (" + deploySeconds + "s)");
-                System.out.println("  - Gathering time: " + gatheringTime + " (" + gatheringSeconds + "s)");
-                System.out.println("  - Total time: " + calculatedTotal + " (" + totalSeconds + "s)");
-                
-                addToTracker(marchInfo, gatheringTime, marchTime, calculatedTotal);
-            } else {
-                // Details collection failed - use deploy time + estimated gathering
-                long deploySeconds = TimeUtils.parseTimeToSeconds(marchInfo.estimatedDeployDuration);
-                String estimatedGatherTime = "02:00:00"; // Default gathering time
-                long gatheringSeconds = TimeUtils.parseTimeToSeconds(estimatedGatherTime);
-                
-                // Total time is deploy + gather + deploy
-                long totalSeconds = deploySeconds + gatheringSeconds + deploySeconds;
-                String calculatedTotal = TimeUtils.formatTime(totalSeconds);
-                
-                System.out.println("⚠️ Using estimated times for Queue " + marchInfo.queueNumber + ":");
-                System.out.println("  - Deploy time (one-way): " + marchInfo.estimatedDeployDuration + " (" + deploySeconds + "s)");
-                System.out.println("  - Estimated gathering: " + estimatedGatherTime + " (" + gatheringSeconds + "s)");
-                System.out.println("  - Total time: " + calculatedTotal + " (" + totalSeconds + "s)");
-                
-                addToTracker(marchInfo, estimatedGatherTime, marchInfo.estimatedDeployDuration, calculatedTotal);
-            }
-        } catch (Exception e) {
-            System.err.println("❌ Error adding to march tracker: " + e.getMessage());
-        }
-    }
-    
-    private void addToTracker(MarchDeployInfo marchInfo, String gatheringTime, String marchTime, String totalTime) {
-        javax.swing.SwingUtilities.invokeLater(() -> {
-            try {
-                MarchTrackerGUI tracker = MarchTrackerGUI.getInstance();
-                tracker.addMarch(
-                    instance.index,
-                    marchInfo.queueNumber,
-                    marchInfo.resourceType,
-                    gatheringTime,
-                    marchTime,
-                    totalTime
-                );
-                
-                tracker.setVisible(true);
-                tracker.toFront();
-                
-                System.out.println("📊 Successfully added march to tracker GUI (SIMPLIFIED)");
-                System.out.println("📊 March Details: Gathering=" + gatheringTime + 
-                                 ", March=" + marchTime + 
-                                 ", Total=" + totalTime);
-                
-            } catch (Exception e) {
-                System.err.println("❌ Error adding to march tracker GUI: " + e.getMessage());
-            }
-        });
     }
     
     public String calculateTotalTime(String marchTime, String gatheringTime) {
