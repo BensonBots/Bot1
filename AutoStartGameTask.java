@@ -232,7 +232,7 @@ public class AutoStartGameTask extends javax.swing.SwingWorker<Void, String> {
         }
         
         // Check for popups (second priority)
-        String[] popupCloseButtons = {"close_x.png", "close_x2.png"};
+        String[] popupCloseButtons = {"close_x.png", "close_x2.png", "close_x3.png", "close_x4.png"};
         for (String closeBtn : popupCloseButtons) {
             Point popupLoc = BotUtils.findImageOnScreen(screenPath, closeBtn, 0.8);
             if (popupLoc != null && isValidPopupLocation(popupLoc)) {

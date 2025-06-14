@@ -5,8 +5,8 @@ import java.awt.Rectangle;
 import java.util.*;
 
 /**
- * DEBUG VERSION: MarchDetailsCollector with extensive debugging for OCR coordinate detection
- * This will help us find the correct coordinates for gathering time extraction
+ * SIMPLIFIED VERSION: MarchDetailsCollector with efficient OCR strategy
+ * Focus on full page OCR which actually works, skip endless coordinate testing
  */
 public class MarchDetailsCollector {
     
@@ -21,7 +21,7 @@ public class MarchDetailsCollector {
      */
     public boolean collectMarchDetailsFromAllDeployedMarches(List<MarchDeployInfo> deployedMarches) {
         try {
-            System.out.println("🔍 Collecting details for " + deployedMarches.size() + " deployed marches (DEBUG MODE)");
+            System.out.println("🔍 Collecting details for " + deployedMarches.size() + " deployed marches (SIMPLIFIED)");
             
             boolean allSuccessful = true;
             
@@ -29,7 +29,7 @@ public class MarchDetailsCollector {
                 MarchDeployInfo marchInfo = deployedMarches.get(i);
                 
                 if (!marchInfo.detailsCollected) {
-                    System.out.println("🔍 Collecting details for Queue " + marchInfo.queueNumber + " (" + marchInfo.resourceType + ") - March " + (i+1) + "/" + deployedMarches.size() + " (DEBUG)");
+                    System.out.println("🔍 Collecting details for Queue " + marchInfo.queueNumber + " (" + marchInfo.resourceType + ") - March " + (i+1) + "/" + deployedMarches.size() + " (SIMPLIFIED)");
                     
                     // Setup march view before each queue
                     if (!setupMarchViewFast()) {
@@ -38,9 +38,9 @@ public class MarchDetailsCollector {
                         continue;
                     }
                     
-                    if (collectDetailsForQueueWithDebug(marchInfo)) {
+                    if (collectDetailsForQueueSimplified(marchInfo)) {
                         marchInfo.detailsCollected = true;
-                        System.out.println("✅ Successfully collected details for Queue " + marchInfo.queueNumber + " (DEBUG)");
+                        System.out.println("✅ Successfully collected details for Queue " + marchInfo.queueNumber + " (SIMPLIFIED)");
                     } else {
                         allSuccessful = false;
                         System.err.println("❌ Failed to collect details for Queue " + marchInfo.queueNumber);
@@ -66,7 +66,7 @@ public class MarchDetailsCollector {
      */
     private boolean setupMarchViewFast() {
         try {
-            System.out.println("🔧 Setting up march view for instance " + instance.index + " (DEBUG)");
+            System.out.println("🔧 Setting up march view for instance " + instance.index + " (SIMPLIFIED)");
             
             // Take screenshot to see current state
             String currentScreenPath = "screenshots/current_state_" + instance.index + ".png";
@@ -117,9 +117,9 @@ public class MarchDetailsCollector {
     }
     
     /**
-     * DEBUG VERSION: Collect details for a specific march with extensive debugging
+     * SIMPLIFIED VERSION: Collect details with efficient strategy - skip coordinate loops!
      */
-    private boolean collectDetailsForQueueWithDebug(MarchDeployInfo marchInfo) {
+    private boolean collectDetailsForQueueSimplified(MarchDeployInfo marchInfo) {
         try {
             String screenshotPath = "screenshots/march_details_" + instance.index + "_queue" + marchInfo.queueNumber + ".png";
             if (!BotUtils.takeScreenshot(instance.index, screenshotPath)) {
@@ -139,8 +139,8 @@ public class MarchDetailsCollector {
                 return false;
             }
             
-            // DEBUG: Extract gathering time with extensive debugging
-            String gatheringTime = extractGatheringTimeWithExtensiveDebug(marchInfo.queueNumber);
+            // SIMPLIFIED: Extract gathering time efficiently (no endless coordinate loops!)
+            String gatheringTime = extractGatheringTimeSimplified(marchInfo.queueNumber);
             if (gatheringTime != null) {
                 System.out.println("✅ Extracted gathering time: " + gatheringTime + " for Queue " + marchInfo.queueNumber);
                 
@@ -172,196 +172,112 @@ public class MarchDetailsCollector {
     }
     
     /**
-     * DEBUG VERSION: Extract gathering time with extensive coordinate debugging
+     * SIMPLIFIED: Extract gathering time efficiently - focus on what works!
+     * Skip endless coordinate testing, go straight to full page OCR
      */
-    private String extractGatheringTimeWithExtensiveDebug(int queueNumber) {
+    private String extractGatheringTimeSimplified(int queueNumber) {
         try {
-            System.out.println("📊 [DEBUG] Extracting gathering time from details page with extensive debugging...");
+            System.out.println("📊 [SIMPLIFIED] Extracting gathering time efficiently...");
             
-            // FIXED: Add retries for gathering time extraction
-            int maxRetries = 3;
-            String gatheringTime = null;
             String screenPath = "screenshots/details_page_" + instance.index + ".png";
+            if (!BotUtils.takeScreenshot(instance.index, screenPath)) {
+                System.err.println("❌ Failed to take details page screenshot");
+                return "02:00:00";
+            }
             
-            for (int retry = 0; retry < maxRetries && gatheringTime == null; retry++) {
-                if (retry > 0) {
-                    System.out.println("🔄 [DEBUG] Retry " + retry + "/" + maxRetries + " for gathering time extraction");
-                    Thread.sleep(2000); // Wait before retry
-                }
+            System.out.println("📸 [SIMPLIFIED] Details page screenshot saved: " + screenPath);
+            
+            // STRATEGY 1: Try a few key coordinates (but don't loop endlessly!)
+            String[] testCoordinates = {
+                "440,165,80,20",  // Your original corrected coordinates
+                "400,165,80,20",  // Slightly left
+                "380,165,100,25", // Wider area
+                "420,155,100,30", // Higher and wider
+                "360,160,120,25"  // Even wider area
+            };
+            
+            System.out.println("🎯 [SIMPLIFIED] Testing " + testCoordinates.length + " key coordinate areas...");
+            
+            for (int i = 0; i < testCoordinates.length; i++) {
+                String[] coords = testCoordinates[i].split(",");
+                int x = Integer.parseInt(coords[0]);
+                int y = Integer.parseInt(coords[1]);
+                int w = Integer.parseInt(coords[2]);
+                int h = Integer.parseInt(coords[3]);
                 
-                if (!BotUtils.takeScreenshot(instance.index, screenPath)) {
-                    System.err.println("❌ Failed to take details page screenshot");
-                    continue;
-                }
+                System.out.println("🔍 [SIMPLIFIED] Test " + (i+1) + "/" + testCoordinates.length + ": x=" + x + ", y=" + y + ", w=" + w + ", h=" + h);
                 
-                System.out.println("📸 [DEBUG] Details page screenshot saved: " + screenPath);
-                
-                // FIXED: Try the best known coordinates first (fallback_gathering_time_1)
-                String timeRegionPath = "screenshots/gathering_time_" + instance.index + ".png";
-                if (OCRUtils.extractImageRegion(screenPath, timeRegionPath, 400, 165, 80, 20)) { // Moved right by 40px
-                    String timeText = OCRUtils.performTimeOCR(timeRegionPath, instance.index);
+                String timeRegionPath = "screenshots/test_region_" + (i+1) + "_" + instance.index + ".png";
+                if (OCRUtils.extractImageRegion(screenPath, timeRegionPath, x, y, w, h)) {
+                    // Try enhanced OCR (not just digits) to get context
+                    String timeText = OCRUtils.performEnhancedOCR(timeRegionPath, instance.index);
                     if (timeText != null && !timeText.trim().isEmpty()) {
+                        System.out.println("📋 [SIMPLIFIED] Test " + (i+1) + " enhanced OCR: '" + timeText + "'");
+                        
                         String parsedTime = TimeUtils.parseTimeFromText(timeText);
                         if (parsedTime != null && TimeUtils.isValidMarchTime(parsedTime)) {
-                            System.out.println("✅ Successfully extracted time from best known region: " + parsedTime);
+                            System.out.println("✅ [SIMPLIFIED] SUCCESS! Found valid time: " + parsedTime + " at coordinates " + testCoordinates[i]);
+                            return parsedTime;
+                        }
+                    }
+                }
+            }
+            
+            // STRATEGY 2: Full page OCR (this is what actually worked in your log!)
+            System.out.println("🔍 [SIMPLIFIED] Key coordinates failed, trying full page OCR (this worked before)...");
+            String fullPageOCR = OCRUtils.performEnhancedOCR(screenPath, instance.index);
+            if (fullPageOCR != null) {
+                System.out.println("📋 [SIMPLIFIED] Full page OCR result:");
+                System.out.println("=== FULL PAGE OCR START ===");
+                System.out.println(fullPageOCR);
+                System.out.println("=== FULL PAGE OCR END ===");
+                
+                // Look for patterns like "Gatheredin 024726" or "Gathering 02:47:26"
+                String[] lines = fullPageOCR.split("\n");
+                for (int i = 0; i < lines.length; i++) {
+                    String line = lines[i].toLowerCase();
+                    
+                    // Look for gathering-related lines
+                    if (line.contains("gather") || line.contains("time") || line.contains("duration")) {
+                        System.out.println("🎯 [SIMPLIFIED] Potential gathering line " + i + ": '" + lines[i] + "'");
+                        
+                        String parsedTime = TimeUtils.parseTimeFromText(lines[i]);
+                        if (parsedTime != null && TimeUtils.isValidMarchTime(parsedTime)) {
+                            System.out.println("✅ [SIMPLIFIED] SUCCESS! Found time from full page OCR: " + parsedTime);
                             return parsedTime;
                         }
                     }
                 }
                 
-                // If best known region fails, try the grid search
-                System.out.println("🔍 [DEBUG] Best region failed, trying coordinate grid...");
-                
-                // Test a grid of positions across the details page
-                int[] xPositions = {300, 320, 340, 360, 380, 400, 420};
-                int[] yPositions = {120, 140, 160, 180, 200, 220};
-                int[] widths = {60, 80, 100, 120};
-                int[] heights = {15, 20, 25}; // Reduced maximum height
-                
-                String bestResult = null;
-                double bestConfidence = 0;
-                String bestCoordinates = "";
-                
-                int testCount = 0;
-                for (int x : xPositions) {
-                    for (int y : yPositions) {
-                        for (int w : widths) {
-                            for (int h : heights) {
-                                testCount++;
-                                String testRegionPath = "screenshots/debug_test_" + testCount + "_" + instance.index + ".png";
-                                
-                                System.out.println("🔍 [DEBUG] Test " + testCount + ": x=" + x + ", y=" + y + ", w=" + w + ", h=" + h);
-                                
-                                if (OCRUtils.extractImageRegion(screenPath, testRegionPath, x, y, w, h)) {
-                                    String timeText = OCRUtils.performTimeOCR(testRegionPath, instance.index);
-                                    
-                                    if (timeText != null && !timeText.trim().isEmpty()) {
-                                        System.out.println("📋 [DEBUG] Test " + testCount + " OCR result: '" + timeText + "'");
-                                        
-                                        String parsedTime = TimeUtils.parseTimeFromText(timeText);
-                                        if (parsedTime != null && TimeUtils.isValidMarchTime(parsedTime)) {
-                                            double confidence = calculateTimeConfidence(timeText, parsedTime);
-                                            System.out.println("✅ [DEBUG] Test " + testCount + " found valid time: " + parsedTime + " (confidence: " + confidence + ")");
-                                            
-                                            if (confidence > bestConfidence) {
-                                                bestResult = parsedTime;
-                                                bestConfidence = confidence;
-                                                bestCoordinates = "x=" + x + ", y=" + y + ", w=" + w + ", h=" + h;
-                                                System.out.println("⭐ [DEBUG] New best result: " + bestResult + " at " + bestCoordinates);
-                                            }
-                                        } else {
-                                            System.out.println("⚠️ [DEBUG] Test " + testCount + " invalid time format: '" + timeText + "'");
-                                        }
-                                    } else {
-                                        System.out.println("❌ [DEBUG] Test " + testCount + " empty OCR result");
-                                    }
-                                } else {
-                                    System.err.println("❌ [DEBUG] Test " + testCount + " failed to extract region");
-                                }
-                                
-                                // Limit total tests to avoid too much output
-                                if (testCount >= 50) {
-                                    System.out.println("📊 [DEBUG] Limiting to first 50 tests to avoid spam");
-                                    break;
-                                }
-                            }
-                            if (testCount >= 50) break;
-                        }
-                        if (testCount >= 50) break;
-                    }
-                    if (testCount >= 50) break;
-                }
-                
-                System.out.println("📊 [DEBUG] Completed " + testCount + " coordinate tests");
-                
-                if (bestResult != null) {
-                    System.out.println("🎉 [DEBUG] BEST RESULT FOUND!");
-                    System.out.println("🎯 [DEBUG] Best time: " + bestResult);
-                    System.out.println("📍 [DEBUG] Best coordinates: " + bestCoordinates);
-                    System.out.println("⭐ [DEBUG] Best confidence: " + bestConfidence);
-                    gatheringTime = bestResult;
-                }
-            }
-            
-            if (gatheringTime != null) {
-                System.out.println("🎉 [DEBUG] BEST RESULT FOUND!");
-                System.out.println("🎯 [DEBUG] Best time: " + gatheringTime);
-                return gatheringTime;
-            }
-            
-            // DEBUG: Also try enhanced OCR on the full details page
-            System.out.println("🔍 [DEBUG] Trying enhanced OCR on full details page...");
-            String fullPageOCR = OCRUtils.performEnhancedOCR(screenPath, instance.index);
-            if (fullPageOCR != null) {
-                System.out.println("📋 [DEBUG] Full page OCR result:");
-                System.out.println("=== FULL PAGE OCR START ===");
-                System.out.println(fullPageOCR);
-                System.out.println("=== FULL PAGE OCR END ===");
-                
-                // Try to find time patterns in the full OCR text
-                String[] lines = fullPageOCR.split("\n");
+                // If no gathering-specific lines, check all lines for time patterns
                 for (int i = 0; i < lines.length; i++) {
-                    String line = lines[i];
-                    String parsedTime = TimeUtils.parseTimeFromText(line);
+                    String parsedTime = TimeUtils.parseTimeFromText(lines[i]);
                     if (parsedTime != null && TimeUtils.isValidMarchTime(parsedTime)) {
-                        System.out.println("🎯 [DEBUG] Found time pattern in full OCR line " + i + ": '" + line + "' -> " + parsedTime);
+                        System.out.println("✅ [SIMPLIFIED] SUCCESS! Found time pattern in line " + i + ": '" + lines[i] + "' -> " + parsedTime);
                         return parsedTime;
                     }
                 }
             }
             
-            System.err.println("⚠️ [DEBUG] Could not extract gathering time after extensive testing, using default");
+            System.err.println("⚠️ [SIMPLIFIED] Could not extract gathering time, using default");
             return "02:00:00";
             
         } catch (Exception e) {
-            System.err.println("❌ Error in debug gathering time extraction: " + e.getMessage());
+            System.err.println("❌ Error in simplified gathering time extraction: " + e.getMessage());
             return "02:00:00";
         }
     }
     
-    /**
-     * Calculate confidence score for time extraction results
-     */
-    private double calculateTimeConfidence(String rawText, String parsedTime) {
-        double confidence = 0;
-        
-        // Higher confidence for clean time formats
-        if (rawText.matches("\\d{2}:\\d{2}:\\d{2}")) {
-            confidence += 10;
-        } else if (rawText.matches("\\d{1}:\\d{2}:\\d{2}")) {
-            confidence += 8;
-        }
-        
-        // Higher confidence for reasonable march times
-        if (parsedTime != null) {
-            String[] parts = parsedTime.split(":");
-            if (parts.length == 3) {
-                int hours = Integer.parseInt(parts[0]);
-                int minutes = Integer.parseInt(parts[1]);
-                int seconds = Integer.parseInt(parts[2]);
-                
-                // Reasonable march times (usually 1-6 hours)
-                if (hours >= 1 && hours <= 6) confidence += 5;
-                if (minutes >= 0 && minutes <= 59) confidence += 2;
-                if (seconds >= 0 && seconds <= 59) confidence += 2;
-            }
-        }
-        
-        return confidence;
-    }
-    
-    // ... (rest of the methods remain the same as the fast version)
-    
     private boolean clickOnMarchQueueAtCenterFast(int queueNumber) {
         try {
-            System.out.println("🖱️ Clicking on March Queue " + queueNumber + " (DEBUG)");
+            System.out.println("🖱️ Clicking on March Queue " + queueNumber + " (SIMPLIFIED)");
             
             Point queuePosition = calculateQueueClickPosition(queueNumber);
             
             if (queuePosition != null) {
                 System.out.println("🎯 Clicking Queue " + queueNumber + " at center position: " + queuePosition);
                 if (BotUtils.clickMenu(instance.index, queuePosition)) {
-                    System.out.println("✅ Clicked on Queue " + queueNumber + " at center position " + queuePosition + " (DEBUG)");
+                    System.out.println("✅ Clicked on Queue " + queueNumber + " at center position " + queuePosition + " (SIMPLIFIED)");
                     Thread.sleep(2000);
                     return true;
                 } else {
@@ -391,7 +307,7 @@ public class MarchDetailsCollector {
     
     private boolean clickDetailsButtonFast() {
         try {
-            System.out.println("🔍 Looking for details button (DEBUG)...");
+            System.out.println("🔍 Looking for details button (SIMPLIFIED)...");
             
             String[] detailsButtonImages = {"details_button.png", "details.png"};
             double[] confidences = {0.6, 0.5, 0.4};
@@ -399,7 +315,7 @@ public class MarchDetailsCollector {
             for (int attempt = 1; attempt <= 2; attempt++) {
                 System.out.println("🔄 Details button detection attempt " + attempt + "/2");
                 
-                String detailsButtonPath = "screenshots/details_button_debug" + attempt + "_" + instance.index + ".png";
+                String detailsButtonPath = "screenshots/details_button_simplified" + attempt + "_" + instance.index + ".png";
                 if (!BotUtils.takeScreenshot(instance.index, detailsButtonPath)) {
                     System.err.println("❌ Failed to take details button screenshot on attempt " + attempt);
                     continue;
@@ -420,7 +336,7 @@ public class MarchDetailsCollector {
                 
                 if (detailsPos != null) {
                     if (BotUtils.clickMenu(instance.index, detailsPos)) {
-                        System.out.println("✅ Clicked details button successfully (DEBUG)");
+                        System.out.println("✅ Clicked details button successfully (SIMPLIFIED)");
                         Thread.sleep(2000);
                         return true;
                     }
@@ -440,7 +356,7 @@ public class MarchDetailsCollector {
             
             for (Point fallbackPos : fallbackPositions) {
                 if (BotUtils.clickMenu(instance.index, fallbackPos)) {
-                    System.out.println("✅ Clicked details button with fallback position " + fallbackPos + " (DEBUG)");
+                    System.out.println("✅ Clicked details button with fallback position " + fallbackPos + " (SIMPLIFIED)");
                     Thread.sleep(2000);
                     return true;
                 }
@@ -456,7 +372,7 @@ public class MarchDetailsCollector {
     
     private void closeDetailsPageFast() {
         try {
-            System.out.println("❌ Closing details page (DEBUG)...");
+            System.out.println("❌ Closing details page (SIMPLIFIED)...");
             
             String closeDetailsPath = "screenshots/close_details_" + instance.index + ".png";
             if (!BotUtils.takeScreenshot(instance.index, closeDetailsPath)) {
@@ -474,7 +390,7 @@ public class MarchDetailsCollector {
             }
             
             if (BotUtils.clickMenu(instance.index, closePos)) {
-                System.out.println("✅ Closed details page at " + closePos + " (DEBUG)");
+                System.out.println("✅ Closed details page at " + closePos + " (SIMPLIFIED)");
                 Thread.sleep(1000);
             }
             
@@ -485,7 +401,7 @@ public class MarchDetailsCollector {
     
     private void addToMarchTrackerFast(MarchDeployInfo marchInfo, String gatheringTime, String totalTime) {
         try {
-            // FIXED: Calculate times correctly whether we have actual gathering time or not
+            // Calculate times correctly whether we have actual gathering time or not
             if (gatheringTime != null && !gatheringTime.equals("02:00:00")) {
                 // We have real gathering time from details page
                 long deploySeconds = TimeUtils.parseTimeToSeconds(marchInfo.estimatedDeployDuration);
@@ -542,7 +458,7 @@ public class MarchDetailsCollector {
                 tracker.setVisible(true);
                 tracker.toFront();
                 
-                System.out.println("📊 Successfully added march to tracker GUI (DEBUG)");
+                System.out.println("📊 Successfully added march to tracker GUI (SIMPLIFIED)");
                 System.out.println("📊 March Details: Gathering=" + gatheringTime + 
                                  ", March=" + marchTime + 
                                  ", Total=" + totalTime);
