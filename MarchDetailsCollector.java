@@ -420,4 +420,21 @@ public class MarchDetailsCollector {
     public String calculateTotalTime(String marchTime, String gatheringTime) {
         return calculateTotalTimeFixed(marchTime, gatheringTime);
     }
+    
+    /**
+     * Add this inner class to your MarchDetailsCollector.java file:
+     */
+    public static class MarchDetails {
+        public String gatheringTime;
+        public String marchingTime;
+        public String totalTime;
+        
+        public MarchDetails() {}
+        
+        public MarchDetails(String gatheringTime, String marchingTime, String totalTime) {
+            this.gatheringTime = gatheringTime;
+            this.marchingTime = marchingTime;
+            this.totalTime = totalTime;
+        }
+    }
 }

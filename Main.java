@@ -78,6 +78,13 @@ public class Main extends JFrame {
         marchTrackerButton.setToolTipText("View active marches with countdown timers");
         topPanel.add(marchTrackerButton);
 
+        // ADDED: Debug button for hibernation troubleshooting
+        JButton debugButton = createButton("Debug States", e -> debugInstanceStates());
+        debugButton.setBackground(new Color(255, 165, 0));
+        debugButton.setForeground(Color.WHITE);
+        debugButton.setToolTipText("Debug instance states for hibernation troubleshooting");
+        topPanel.add(debugButton);
+
         JPanel consolePanel = createConsolePanel();
 
         JSplitPane mainSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
@@ -192,6 +199,54 @@ public class Main extends JFrame {
     private void showMarchTracker() {
         MarchTrackerGUI.showTracker();
         addConsoleMessage("📈 March Tracker opened");
+    }
+
+    /**
+     * DEBUG: Debug instance states for hibernation troubleshooting
+     */
+    public void debugInstanceStates() {
+        addConsoleMessage("=== DEBUG INSTANCE STATES ===");
+        System.out.println("=== DEBUG INSTANCE STATES ===");
+        for (int i = 0; i < instances.size(); i++) {
+            MemuInstance inst = instances.get(i);
+            
+            String currentState = inst.getState();
+            String currentStatus = inst.getStatus();
+            boolean autoGatherRunning = inst.isAutoGatherRunning();
+            boolean actuallyRunning = BotUtils.isInstanceRunning(inst.index);
+            
+            String debugInfo = "Instance " + inst.index + " (" + inst.name + "):";
+            addConsoleMessage(debugInfo);
+            System.out.println(debugInfo);
+            
+            String stateInfo = "  State: '" + currentState + "'";
+            addConsoleMessage(stateInfo);
+            System.out.println(stateInfo);
+            
+            String statusInfo = "  Status: '" + currentStatus + "'";
+            addConsoleMessage(statusInfo);
+            System.out.println(statusInfo);
+            
+            String autoGatherInfo = "  Auto Gather Running: " + autoGatherRunning;
+            addConsoleMessage(autoGatherInfo);
+            System.out.println(autoGatherInfo);
+            
+            String runningInfo = "  Actually Running: " + actuallyRunning;
+            addConsoleMessage(runningInfo);
+            System.out.println(runningInfo);
+            
+            if (i < tableModel.getRowCount()) {
+                Object tableStatus = tableModel.getValueAt(i, 2);
+                String tableInfo = "  Table Status: '" + tableStatus + "'";
+                addConsoleMessage(tableInfo);
+                System.out.println(tableInfo);
+            }
+            
+            addConsoleMessage("---");
+            System.out.println("---");
+        }
+        addConsoleMessage("=== END DEBUG ===");
+        System.out.println("=== END DEBUG ===");
     }
 
     private void optimizeAllInstances() {
@@ -562,36 +617,51 @@ public class Main extends JFrame {
             for (int i = 0; i < instances.size() && i < tableModel.getRowCount(); i++) {
                 MemuInstance inst = instances.get(i);
                 
-                // Update hibernation status display with color coding
+                // Get the current state from the instance
                 String currentState = inst.getState();
                 String displayStatus = currentState;
                 
                 // FIXED: Enhanced hibernation status with colors and countdown
-                if (currentState.contains("Hibernating - Wake in")) {
-                    // Extract time and format nicely
-                    String timePattern = "Wake in (\\d{2}:\\d{2}:\\d{2})";
-                    java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(timePattern);
-                    java.util.regex.Matcher matcher = pattern.matcher(currentState);
-                    
-                    if (matcher.find()) {
-                        String timeRemaining = matcher.group(1);
-                        displayStatus = "😴 Hibernating ⏰ " + timeRemaining;
-                    } else {
-                        displayStatus = "😴 Hibernating...";
+                if (currentState != null) {
+                    if (currentState.contains("Hibernating - Wake in")) {
+                        // Extract time and format nicely
+                        String timePattern = "Wake in (\\d{2}:\\d{2}:\\d{2})";
+                        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(timePattern);
+                        java.util.regex.Matcher matcher = pattern.matcher(currentState);
+                        
+                        if (matcher.find()) {
+                            String timeRemaining = matcher.group(1);
+                            displayStatus = "😴 Hibernating ⏰ " + timeRemaining;
+                        } else {
+                            displayStatus = "😴 Hibernating...";
+                        }
+                    } else if (currentState.contains("Waking up")) {
+                        displayStatus = "🌅 Waking up...";
+                    } else if (currentState.contains("Awake")) {
+                        displayStatus = "☀️ Awake - Ready";
+                    } else if (currentState.contains("Starting") || currentState.contains("Deploying")) {
+                        displayStatus = "🚀 " + currentState;
+                    } else if (currentState.contains("Collecting")) {
+                        displayStatus = "📊 " + currentState;
+                    } else if (currentState.contains("hibernating auto gather")) {
+                        displayStatus = "🔄 " + currentState;
+                    } else if (currentState.equals("Idle") && inst.isAutoGatherRunning()) {
+                        // FIXED: Check if this instance should be hibernating
+                        boolean actuallyRunning = BotUtils.isInstanceRunning(inst.index);
+                        if (!actuallyRunning && inst.isAutoGatherRunning()) {
+                            // Instance is stopped but auto gather is running = hibernating
+                            displayStatus = "😴 Hibernating...";
+                        } else {
+                            displayStatus = "🌾 Auto Gathering...";
+                        }
                     }
-                } else if (currentState.contains("Waking up")) {
-                    displayStatus = "🌅 Waking up...";
-                } else if (currentState.contains("Awake")) {
-                    displayStatus = "☀️ Awake - Ready";
-                } else if (currentState.contains("Starting") || currentState.contains("Deploying")) {
-                    displayStatus = "🚀 " + currentState;
-                } else if (currentState.contains("Collecting")) {
-                    displayStatus = "📊 " + currentState;
                 }
                 
-                // Update table with enhanced status
-                if (!displayStatus.equals(tableModel.getValueAt(i, 2))) {
+                // Update table with enhanced status (only if it actually changed)
+                Object currentTableValue = tableModel.getValueAt(i, 2);
+                if (!displayStatus.equals(currentTableValue)) {
                     tableModel.setValueAt(displayStatus, i, 2);
+                    System.out.println("🔄 [STATUS UPDATE] " + inst.name + ": '" + currentTableValue + "' → '" + displayStatus + "'");
                 }
                 
                 // Also check for actual running status periodically (every 10 seconds)
@@ -601,7 +671,10 @@ public class Main extends JFrame {
                         inst.status = actualStatus;
                         // Don't overwrite hibernation status if it's showing hibernation info
                         if (!currentState.contains("Hibernating") && !currentState.contains("Waking")) {
-                            tableModel.setValueAt(actualStatus, i, 2);
+                            // Only update if we're not showing special status
+                            if (displayStatus.equals(currentState)) {
+                                tableModel.setValueAt(actualStatus, i, 2);
+                            }
                         }
                     }
                 }
@@ -609,6 +682,7 @@ public class Main extends JFrame {
         });
         statusTimer.start();
     }
+
     public void saveSettings() {
         try (FileWriter writer = new FileWriter("settings.json")) {
             Gson gson = new GsonBuilder()
