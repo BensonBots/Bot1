@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * FIXED: March Tracker GUI with corrected progress bar and completed march handling
+ * FIXED: March Tracker GUI with smooth second-by-second updates and preserved completed marches
  */
 public class MarchTrackerGUI extends JFrame {
     private static MarchTrackerGUI instance;
@@ -27,14 +27,11 @@ public class MarchTrackerGUI extends JFrame {
         "Instance", "Queue", "Resource", "Time Remaining", "Progress"
     };
 
-    private long lastUpdateTime = 0;
-    private static final long UPDATE_INTERVAL = 1000;
-
     private MarchTrackerGUI() {
         activeMarches = new ConcurrentHashMap<>();
         completedMarches = new ArrayList<>();
         initializeUI();
-        startOptimizedUpdateTimer();
+        startSmoothUpdateTimer();
     }
 
     public static synchronized MarchTrackerGUI getInstance() {
@@ -106,10 +103,9 @@ public class MarchTrackerGUI extends JFrame {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         panel.setBorder(BorderFactory.createEmptyBorder(5, 10, 10, 10));
 
-        // FIXED: Add checkbox to show/hide completed marches
         showCompletedCheckbox = new JCheckBox("Show Completed", false);
         showCompletedCheckbox.addActionListener(e -> {
-            updateTableDataOptimized();
+            updateTableData();
             System.out.println("🔄 Show completed marches: " + showCompletedCheckbox.isSelected());
         });
 
@@ -134,27 +130,67 @@ public class MarchTrackerGUI extends JFrame {
         }
     }
 
-    private void startOptimizedUpdateTimer() {
+    // FIXED: Smooth timer that updates every second and handles automatic completion
+    private void startSmoothUpdateTimer() {
         updateTimer = new Timer(1000, e -> {
-            long currentTime = System.currentTimeMillis();
-            
-            if (currentTime - lastUpdateTime < UPDATE_INTERVAL) {
-                return;
-            }
-            
-            updateDisplayOptimized();
-            lastUpdateTime = currentTime;
+            SwingUtilities.invokeLater(() -> {
+                // Update march statuses and handle automatic completion
+                List<String> completedMarchIds = new ArrayList<>();
+                
+                for (Map.Entry<String, ActiveMarch> entry : activeMarches.entrySet()) {
+                    ActiveMarch march = entry.getValue();
+                    march.updateStatus();
+                    
+                    // Check if march just completed
+                    if (march.isCompleted() && !march.getStatus().contains("Completed")) {
+                        march.setStatus("✅ Completed");
+                        completedMarchIds.add(entry.getKey());
+                        System.out.println("📊 [TRACKER] March auto-completed: " + march.getSummary());
+                    }
+                }
+                
+                // Move completed marches to completed list
+                for (String marchId : completedMarchIds) {
+                    ActiveMarch completedMarch = activeMarches.remove(marchId);
+                    if (completedMarch != null) {
+                        completedMarches.add(completedMarch);
+                    }
+                }
+                
+                // Update display
+                updateTableData();
+                updateStatusLabels();
+                
+                // Log completed marches
+                if (!completedMarchIds.isEmpty()) {
+                    statusLabel.setText("Auto-completed " + completedMarchIds.size() + " march(es)");
+                }
+            });
         });
         updateTimer.start();
         
-        System.out.println("🚀 [TRACKER] Optimized update timer started (1-second intervals)");
+        System.out.println("🚀 [TRACKER] Smooth update timer started (1-second intervals with auto-completion)");
     }
 
     public void addMarch(int instanceIndex, int queueNumber, String resourceType, 
                         String gatheringTime, String marchingTime, String totalTime) {
         
-        String marchId = instanceIndex + "-" + queueNumber;
+        // FIXED: Use timestamp in march ID to prevent overwriting completed marches
+        String marchId = instanceIndex + "-" + queueNumber + "-" + System.currentTimeMillis();
         LocalDateTime startTime = LocalDateTime.now();
+        
+        // Check if there's an existing active march for this instance+queue
+        String oldMarchId = findExistingActiveMarch(instanceIndex, queueNumber);
+        if (oldMarchId != null) {
+            System.out.println("📊 [TRACKER] Found existing active march for Instance " + instanceIndex + " Queue " + queueNumber + ", completing it first");
+            // Move existing march to completed before adding new one
+            ActiveMarch existingMarch = activeMarches.remove(oldMarchId);
+            if (existingMarch != null) {
+                existingMarch.setStatus("✅ Completed (New march started)");
+                completedMarches.add(existingMarch);
+                System.out.println("📊 [TRACKER] Moved existing march to completed: " + existingMarch.getSummary());
+            }
+        }
         
         ActiveMarch march = new ActiveMarch(
             instanceIndex, 
@@ -166,13 +202,23 @@ public class MarchTrackerGUI extends JFrame {
         activeMarches.put(marchId, march);
         
         SwingUtilities.invokeLater(() -> {
-            updateTableDataOptimized();
+            updateTableData();
             statusLabel.setText("Added march: " + resourceType + " on Instance " + instanceIndex + " Queue " + queueNumber);
         });
         
-        System.out.println("📊 [TRACKER] FIXED: Added march with EXACT queue number " + queueNumber);
-        System.out.println("📊 [TRACKER] March: " + march);
-        System.out.println("📊 [TRACKER] March timing - Marching: " + marchingTime + ", Gathering: " + gatheringTime + ", Total: " + totalTime);
+        System.out.println("📊 [TRACKER] Added new march with unique ID: " + marchId);
+        System.out.println("📊 [TRACKER] March details: " + march);
+    }
+    
+    // Helper method to find existing active march for same instance+queue
+    private String findExistingActiveMarch(int instanceIndex, int queueNumber) {
+        for (Map.Entry<String, ActiveMarch> entry : activeMarches.entrySet()) {
+            ActiveMarch march = entry.getValue();
+            if (march.getInstanceIndex() == instanceIndex && march.getQueueNumber() == queueNumber) {
+                return entry.getKey();
+            }
+        }
+        return null;
     }
 
     public static void registerNewMarch(int instanceIndex, int queueNumber, String resourceType, String marchTime) {
@@ -184,52 +230,64 @@ public class MarchTrackerGUI extends JFrame {
     }
 
     public void updateMarchStatus(int instanceIndex, int queueNumber, String newStatus) {
-        String marchId = instanceIndex + "-" + queueNumber;
-        ActiveMarch march = activeMarches.get(marchId);
-        
-        if (march != null) {
-            march.setStatus(newStatus);
-            SwingUtilities.invokeLater(() -> {
-                updateTableDataOptimized();
-                statusLabel.setText("Updated march status: " + newStatus);
-            });
+        // FIXED: Find march by instance+queue since we now use unique IDs
+        String marchId = findExistingActiveMarch(instanceIndex, queueNumber);
+        if (marchId != null) {
+            ActiveMarch march = activeMarches.get(marchId);
+            if (march != null) {
+                march.setStatus(newStatus);
+                SwingUtilities.invokeLater(() -> {
+                    updateTableData();
+                    statusLabel.setText("Updated march status: " + newStatus);
+                });
+            }
         }
     }
 
     public void completeMarch(int instanceIndex, int queueNumber) {
-        String marchId = instanceIndex + "-" + queueNumber;
-        ActiveMarch march = activeMarches.remove(marchId);
-        
-        if (march != null) {
-            march.setStatus("✅ Completed");
-            completedMarches.add(march);
-            SwingUtilities.invokeLater(() -> {
-                updateTableDataOptimized();
-                statusLabel.setText("March completed: " + march.getResourceType());
-            });
+        // FIXED: Find march by instance+queue since we now use unique IDs
+        String marchId = findExistingActiveMarch(instanceIndex, queueNumber);
+        if (marchId != null) {
+            ActiveMarch march = activeMarches.remove(marchId);
+            if (march != null) {
+                march.setStatus("✅ Completed");
+                completedMarches.add(march);
+                SwingUtilities.invokeLater(() -> {
+                    updateTableData();
+                    statusLabel.setText("March completed: " + march.getResourceType());
+                });
+                System.out.println("📊 [TRACKER] March completed and moved to completed list: " + march.getSummary());
+            }
         }
     }
 
     public void removeMarch(int instanceIndex, int queueNumber) {
-        String marchId = instanceIndex + "-" + queueNumber;
-        ActiveMarch removed = activeMarches.remove(marchId);
-        
-        if (removed != null) {
-            SwingUtilities.invokeLater(() -> {
-                updateTableDataOptimized();
-                statusLabel.setText("March removed: " + removed.getResourceType());
-            });
+        // FIXED: Find march by instance+queue since we now use unique IDs
+        String marchId = findExistingActiveMarch(instanceIndex, queueNumber);
+        if (marchId != null) {
+            ActiveMarch removed = activeMarches.remove(marchId);
+            if (removed != null) {
+                SwingUtilities.invokeLater(() -> {
+                    updateTableData();
+                    statusLabel.setText("March removed: " + removed.getResourceType());
+                });
+                System.out.println("📊 [TRACKER] March removed: " + removed.getSummary());
+            }
         }
     }
 
     public boolean isQueueMarching(int instanceIndex, int queueNumber) {
-        String marchId = instanceIndex + "-" + queueNumber;
-        return activeMarches.containsKey(marchId);
+        // FIXED: Check by instance+queue since we now use unique IDs
+        return findExistingActiveMarch(instanceIndex, queueNumber) != null;
     }
 
     public ActiveMarch getMarchInfo(int instanceIndex, int queueNumber) {
-        String marchId = instanceIndex + "-" + queueNumber;
-        return activeMarches.get(marchId);
+        // FIXED: Find march by instance+queue since we now use unique IDs
+        String marchId = findExistingActiveMarch(instanceIndex, queueNumber);
+        if (marchId != null) {
+            return activeMarches.get(marchId);
+        }
+        return null;
     }
 
     public List<ActiveMarch> getActiveMarches() {
@@ -244,32 +302,14 @@ public class MarchTrackerGUI extends JFrame {
         activeMarches.clear();
         completedMarches.clear();
         SwingUtilities.invokeLater(() -> {
-            updateTableDataOptimized();
+            updateTableData();
             statusLabel.setText("All marches cleared");
         });
         System.out.println("🧹 March tracker cleared");
     }
 
-    /**
-     * FIXED: Update display without automatically moving completed marches
-     */
-    private void updateDisplayOptimized() {
-        SwingUtilities.invokeLater(() -> {
-            // Update statuses for all marches
-            for (ActiveMarch march : activeMarches.values()) {
-                march.updateStatus();
-            }
-            
-            // Always update table and status labels
-            updateTableDataOptimized();
-            updateStatusLabelsOptimized();
-        });
-    }
-
-    /**
-     * FIXED: More efficient table update that only updates when needed
-     */
-    private void updateTableDataOptimized() {
+    // FIXED: Clean table update that always refreshes
+    private void updateTableData() {
         // Determine which marches to show
         List<ActiveMarch> marchesToShow = new ArrayList<>();
         
@@ -278,7 +318,6 @@ public class MarchTrackerGUI extends JFrame {
             if (!march.isCompleted()) {
                 marchesToShow.add(march);
             } else if (showCompletedCheckbox.isSelected()) {
-                // Show completed marches if checkbox is checked
                 marchesToShow.add(march);
             }
         }
@@ -288,46 +327,31 @@ public class MarchTrackerGUI extends JFrame {
             marchesToShow.addAll(completedMarches);
         }
         
-        // FIXED: Only update if row count changed or every 10 seconds
-        int currentRowCount = tableModel.getRowCount();
-        int expectedRowCount = marchesToShow.size();
+        // Always rebuild table for smooth updates
+        tableModel.setRowCount(0);
         
-        boolean shouldUpdate = (currentRowCount != expectedRowCount) || 
-                              (System.currentTimeMillis() % 10000 < 1000); // Every 10 seconds
-        
-        if (shouldUpdate) {
-            // Clear and rebuild table
-            tableModel.setRowCount(0);
-            
-            for (ActiveMarch march : marchesToShow) {
-                Object[] row = createTableRow(march);
-                tableModel.addRow(row);
-            }
-            
-            // FIXED: Only log significant updates
-            if (currentRowCount != expectedRowCount) {
-                System.out.println("🔄 [TRACKER] Table updated: " + marchesToShow.size() + " marches shown");
-            }
+        for (ActiveMarch march : marchesToShow) {
+            Object[] row = createTableRow(march);
+            tableModel.addRow(row);
         }
+        
+        // Force table repaint for smooth updates
+        marchTable.repaint();
     }
 
-    /**
-     * FIXED: Create table row with proper progress calculation
-     */
     private Object[] createTableRow(ActiveMarch march) {
-        // FIXED: Use the march's built-in progress calculation
         double progressPercent = march.getProgressPercentage();
         
         return new Object[]{
             "Instance " + march.getInstanceIndex(),
             "Queue " + march.getQueueNumber(),
             march.getResourceType(),
-            formatTimeRemaining(march.getTimeRemaining()),
-            progressPercent // FIXED: Use actual progress percentage
+            march.getTimeRemaining(), // Raw seconds for renderer
+            progressPercent
         };
     }
 
-    private void updateStatusLabelsOptimized() {
+    private void updateStatusLabels() {
         int totalActive = 0;
         int gathering = 0;
         int marching = 0;
@@ -350,7 +374,6 @@ public class MarchTrackerGUI extends JFrame {
             }
         }
         
-        // Add completed marches from completed list
         completed += completedMarches.size();
 
         totalMarchesLabel.setText(String.format(
@@ -371,20 +394,33 @@ public class MarchTrackerGUI extends JFrame {
     }
 
     private void refreshMarchData() {
-        updateDisplayOptimized();
+        updateTableData();
         statusLabel.setText("Refreshed march data");
     }
 
     private void clearCompletedMarches() {
-        // Remove completed marches from active marches
-        activeMarches.entrySet().removeIf(entry -> entry.getValue().isCompleted());
+        // Remove completed marches from active marches (move them to completed list)
+        Iterator<Map.Entry<String, ActiveMarch>> iterator = activeMarches.entrySet().iterator();
+        int movedCount = 0;
+        
+        while (iterator.hasNext()) {
+            Map.Entry<String, ActiveMarch> entry = iterator.next();
+            ActiveMarch march = entry.getValue();
+            if (march.isCompleted()) {
+                march.setStatus("✅ Completed");
+                completedMarches.add(march);
+                iterator.remove();
+                movedCount++;
+            }
+        }
         
         // Clear the completed marches list
+        int clearedCount = completedMarches.size();
         completedMarches.clear();
         
-        updateTableDataOptimized();
-        statusLabel.setText("Cleared completed marches");
-        System.out.println("🧹 [TRACKER] Cleared all completed marches");
+        updateTableData();
+        statusLabel.setText("Moved " + movedCount + " active completed marches, cleared " + clearedCount + " old completed marches");
+        System.out.println("🧹 [TRACKER] Moved " + movedCount + " completed marches from active, cleared " + clearedCount + " from completed list");
     }
 
     public static void showTracker() {
@@ -395,13 +431,22 @@ public class MarchTrackerGUI extends JFrame {
         });
     }
 
+    // FIXED: Time remaining renderer that works with raw seconds
     private class TimeRemainingRenderer extends DefaultTableCellRenderer {
         @Override
         public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, 
                                                      boolean hasFocus, int row, int column) {
-            Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
             
-            String timeStr = value.toString();
+            String timeStr;
+            if (value instanceof Long) {
+                long seconds = (Long) value;
+                timeStr = formatTimeRemaining(seconds);
+            } else {
+                timeStr = value.toString();
+            }
+            
+            Component c = super.getTableCellRendererComponent(table, timeStr, isSelected, hasFocus, row, column);
+            
             if (timeStr.equals("00:00:00")) {
                 c.setForeground(Color.GREEN);
                 setText("✅ COMPLETED");
@@ -415,9 +460,6 @@ public class MarchTrackerGUI extends JFrame {
         }
     }
 
-    /**
-     * FIXED: Progress bar renderer that properly handles the progress value
-     */
     private class ProgressBarRenderer extends JProgressBar implements TableCellRenderer {
         
         public ProgressBarRenderer() {
@@ -434,7 +476,6 @@ public class MarchTrackerGUI extends JFrame {
             
             int progress = 0;
             
-            // FIXED: Proper handling of different value types
             if (value instanceof Double) {
                 progress = (int) Math.round((Double) value);
             } else if (value instanceof Integer) {
@@ -447,31 +488,25 @@ public class MarchTrackerGUI extends JFrame {
                 }
             }
             
-            // FIXED: Ensure progress is within valid range
             progress = Math.max(0, Math.min(100, progress));
             setValue(progress);
             setString(progress + "%");
             
-            // FIXED: Better color coding
+            // Color coding
             if (progress >= 100) {
-                setForeground(new Color(76, 175, 80)); // Green for completed
-                setBackground(new Color(45, 45, 48));
+                setForeground(new Color(76, 175, 80)); // Green
             } else if (progress >= 75) {
-                setForeground(new Color(139, 195, 74)); // Light green for almost done
-                setBackground(new Color(45, 45, 48));
+                setForeground(new Color(139, 195, 74)); // Light green
             } else if (progress >= 50) {
-                setForeground(new Color(255, 193, 7)); // Yellow for halfway
-                setBackground(new Color(45, 45, 48));
+                setForeground(new Color(255, 193, 7)); // Yellow
             } else if (progress >= 25) {
-                setForeground(new Color(255, 152, 0)); // Orange for started
-                setBackground(new Color(45, 45, 48));
+                setForeground(new Color(255, 152, 0)); // Orange
             } else {
-                setForeground(new Color(244, 67, 54)); // Red for just started
-                setBackground(new Color(45, 45, 48));
+                setForeground(new Color(244, 67, 54)); // Red
             }
             
-            // Override foreground to white for better visibility
-            setForeground(Color.WHITE);
+            setForeground(Color.WHITE); // Override for visibility
+            setBackground(new Color(45, 45, 48));
             
             if (isSelected) {
                 setBorder(BorderFactory.createLineBorder(new Color(100, 150, 255), 1));
