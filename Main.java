@@ -29,16 +29,14 @@ public class Main extends JFrame {
     private static Main instance;
     private static Main mainInstance;
 
-    // Enhanced system management
+    // Simplified system management
     private Map<Integer, String> hibernationStates = new HashMap<>();
-    private InstanceQueueManager queueManager;
-    private SystemSettings systemSettings;
     
-    // Selection system
+    // Simplified selection system
     private Set<Integer> selectedInstances = new HashSet<>();
     private JCheckBox selectAllCheckbox;
     
-    // Action panels
+    // Simplified action panel
     private JPanel selectionActionsPanel;
     private JLabel selectionStatusLabel;
 
@@ -46,17 +44,13 @@ public class Main extends JFrame {
         instance = this;
         mainInstance = this;
         
-        // Initialize system components
-        systemSettings = new SystemSettings();
-        queueManager = new InstanceQueueManager(systemSettings);
-        
         BotUtils.init();
         configureWindow();
         initializeUI();
         loadSettings();
         refreshInstances();
         startCleanStatusUpdater();
-        addConsoleMessage("🚀 Benson v1.0.3 started - Enhanced Module Orchestration System!");
+        addConsoleMessage("🚀 Benson v1.0.3 started - Ready to automate your game!");
     }
 
     public static Main getInstance() {
@@ -67,14 +61,11 @@ public class Main extends JFrame {
         try {
             if (isHibernationStatus(newStatus)) {
                 hibernationStates.put(instanceIndex, newStatus);
-                queueManager.updateInstanceStatus(instanceIndex, InstanceQueueManager.InstanceStatus.HIBERNATING);
                 System.out.println("🔥 [HIBERNATION] Stored hibernation status for instance " + instanceIndex + ": " + newStatus);
             } else if (newStatus.contains("Stopped")) {
                 hibernationStates.remove(instanceIndex);
-                queueManager.updateInstanceStatus(instanceIndex, InstanceQueueManager.InstanceStatus.STOPPED);
             } else {
                 hibernationStates.remove(instanceIndex);
-                queueManager.updateInstanceStatus(instanceIndex, InstanceQueueManager.InstanceStatus.RUNNING);
             }
             
             SwingUtilities.invokeLater(() -> {
@@ -95,9 +86,9 @@ public class Main extends JFrame {
     }
 
     private void configureWindow() {
-        setTitle("Benson v1.0.3 - Enhanced Module Orchestration System");
+        setTitle("Benson v1.0.3 - Game Automation Bot");
         setDefaultCloseOperation(EXIT_ON_CLOSE);
-        setSize(1400, 700);
+        setSize(1200, 600);
         setLocationRelativeTo(null);
         try {
             UIManager.setLookAndFeel(new FlatDarkLaf());
@@ -109,12 +100,12 @@ public class Main extends JFrame {
     private void initializeUI() {
         setLayout(new BorderLayout());
 
-        // Enhanced table model with selection and module queue columns
+        // Simplified table model - removed confusing columns
         tableModel = new DefaultTableModel(
-            new Object[]{"☑", "Priority", "Index", "Name", "Status", "Module Queue", "Actions"}, 0) {
+            new Object[]{"☑", "Index", "Name", "Status", "Modules", "Actions"}, 0) {
             @Override 
             public boolean isCellEditable(int row, int col) {
-                return col == 0 || col == 6; // Checkbox and actions columns
+                return col == 0 || col == 5; // Checkbox and actions columns
             }
             
             @Override
@@ -128,11 +119,8 @@ public class Main extends JFrame {
         configureTable();
 
         JPanel topPanel = createTopPanel();
-        JPanel selectionPanel = createSelectionActionsPanel();
+        JPanel selectionPanel = createSimplifiedSelectionPanel();
         JPanel consolePanel = createConsolePanel();
-
-        // System status panel
-        JPanel systemStatusPanel = createSystemStatusPanel();
 
         // Main split pane
         JSplitPane mainSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
@@ -144,23 +132,22 @@ public class Main extends JFrame {
         
         mainSplitPane.setTopComponent(upperPanel);
         mainSplitPane.setBottomComponent(consolePanel);
-        mainSplitPane.setDividerLocation(450);
-        mainSplitPane.setResizeWeight(0.7);
+        mainSplitPane.setDividerLocation(350);
+        mainSplitPane.setResizeWeight(0.65);
 
         add(topPanel, BorderLayout.NORTH);
-        add(systemStatusPanel, BorderLayout.WEST);
         add(mainSplitPane, BorderLayout.CENTER);
     }
 
     private JPanel createTopPanel() {
         JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
         
-        topPanel.add(createButton("Refresh", e -> refreshInstances()));
-        topPanel.add(createButton("Create Instance", e -> createNewInstance()));
+        topPanel.add(createButton("Refresh Instances", e -> refreshInstances()));
+        topPanel.add(createButton("Create New Instance", e -> createNewInstance()));
         
-        optimizeAllButton = createButton("Optimize All", e -> optimizeAllInstances());
+        optimizeAllButton = createButton("Optimize All Instances", e -> optimizeAllInstances());
         optimizeAllButton.setBackground(new Color(34, 139, 34));
-        optimizeAllButton.setToolTipText("Optimize all stopped instances to 480x800 resolution");
+        optimizeAllButton.setToolTipText("Optimize all stopped instances to proper resolution");
         topPanel.add(optimizeAllButton);
 
         JButton marchTrackerButton = createButton("March Tracker", e -> showMarchTracker());
@@ -168,19 +155,14 @@ public class Main extends JFrame {
         marchTrackerButton.setForeground(Color.WHITE);
         topPanel.add(marchTrackerButton);
 
-        JButton systemSettingsButton = createButton("System Settings", e -> showSystemSettings());
-        systemSettingsButton.setBackground(new Color(255, 152, 0));
-        systemSettingsButton.setForeground(Color.WHITE);
-        topPanel.add(systemSettingsButton);
-
         return topPanel;
     }
 
-    private JPanel createSelectionActionsPanel() {
+    private JPanel createSimplifiedSelectionPanel() {
         selectionActionsPanel = new JPanel();
         selectionActionsPanel.setLayout(new BoxLayout(selectionActionsPanel, BoxLayout.Y_AXIS));
-        selectionActionsPanel.setBorder(BorderFactory.createTitledBorder("Selection Actions"));
-        selectionActionsPanel.setPreferredSize(new Dimension(0, 120));
+        selectionActionsPanel.setBorder(BorderFactory.createTitledBorder("Control Selected Instances"));
+        selectionActionsPanel.setPreferredSize(new Dimension(0, 80));
 
         // Selection status
         selectionStatusLabel = new JLabel("No instances selected");
@@ -190,79 +172,17 @@ public class Main extends JFrame {
         statusPanel.add(selectionStatusLabel);
         selectionActionsPanel.add(statusPanel);
 
-        // Instance control buttons
-        JPanel instanceControlPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
-        instanceControlPanel.add(new JLabel("Instance Control:"));
-        instanceControlPanel.add(createActionButton("Start Selected", e -> startSelectedInstances()));
-        instanceControlPanel.add(createActionButton("Stop Selected", e -> stopSelectedInstances()));
-        instanceControlPanel.add(createActionButton("Restart Selected", e -> restartSelectedInstances()));
-        selectionActionsPanel.add(instanceControlPanel);
-
-        // Module control buttons
-        JPanel moduleControlPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
-        moduleControlPanel.add(new JLabel("Module Control:"));
-        moduleControlPanel.add(createActionButton("▶️ Start All Modules", e -> startAllModulesOnSelected()));
-        moduleControlPanel.add(createActionButton("⏸️ Pause All", e -> pauseAllModulesOnSelected()));
-        moduleControlPanel.add(createActionButton("⏹️ Stop All", e -> stopAllModulesOnSelected()));
-        moduleControlPanel.add(createActionButton("🔄 Restart Chains", e -> restartModuleChainsOnSelected()));
-        selectionActionsPanel.add(moduleControlPanel);
-
-        // Quick action buttons  
-        JPanel quickActionsPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
-        quickActionsPanel.add(new JLabel("Quick Actions:"));
-        quickActionsPanel.add(createActionButton("🌾 Start Gathering", e -> startGatheringOnSelected()));
-        quickActionsPanel.add(createActionButton("🎁 Run Gift Claims", e -> startGiftClaimingOnSelected()));
-        quickActionsPanel.add(createActionButton("🛠️ Configure All", e -> configureSelectedInstances()));
-        selectionActionsPanel.add(quickActionsPanel);
+        // Simplified control buttons
+        JPanel controlPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 5));
+        
+        controlPanel.add(createActionButton("▶️ Start Selected", e -> startSelectedInstances()));
+        controlPanel.add(createActionButton("⏹️ Stop Selected", e -> stopSelectedInstances()));
+        controlPanel.add(createActionButton("🌾 Start Auto Gather", e -> startGatheringOnSelected()));
+        controlPanel.add(createActionButton("⚙️ Configure Modules", e -> configureSelectedInstances()));
+        
+        selectionActionsPanel.add(controlPanel);
 
         return selectionActionsPanel;
-    }
-
-    private JPanel createSystemStatusPanel() {
-        JPanel panel = new JPanel();
-        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-        panel.setBorder(BorderFactory.createTitledBorder("System Status"));
-        panel.setPreferredSize(new Dimension(200, 0));
-
-        // Queue status
-        JLabel queueStatusLabel = new JLabel("<html><b>Queue Status:</b><br/>Loading...</html>");
-        panel.add(queueStatusLabel);
-
-        // Resource usage
-        JLabel resourceLabel = new JLabel("<html><b>Resources:</b><br/>Calculating...</html>");
-        panel.add(resourceLabel);
-
-        // Update timer for system status
-        Timer systemTimer = new Timer(2000, e -> {
-            SwingUtilities.invokeLater(() -> {
-                InstanceQueueManager.QueueStatus status = queueManager.getQueueStatus();
-                queueStatusLabel.setText(String.format(
-                    "<html><b>Queue Status:</b><br/>" +
-                    "Running: %d/%d<br/>" +
-                    "Hibernating: %d<br/>" +
-                    "Queued: %d<br/>" +
-                    "Next slot: %s</html>",
-                    status.runningCount, 
-                    systemSettings.maxConcurrentInstances,
-                    status.hibernatingCount,
-                    status.queuedCount,
-                    status.nextSlotETA.isEmpty() ? "Available" : status.nextSlotETA
-                ));
-
-                // Simple resource calculation
-                long usedMemory = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
-                resourceLabel.setText(String.format(
-                    "<html><b>Resources:</b><br/>" +
-                    "Memory: %.1f GB<br/>" +
-                    "Active: %d instances</html>",
-                    usedMemory / (1024.0 * 1024.0 * 1024.0),
-                    status.runningCount
-                ));
-            });
-        });
-        systemTimer.start();
-
-        return panel;
     }
 
     private void configureTable() {
@@ -270,20 +190,19 @@ public class Main extends JFrame {
         instancesTable.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
         instancesTable.setFont(new Font("Segoe UI", Font.PLAIN, 12));
 
-        // Column widths
+        // Simplified column widths
         instancesTable.getColumnModel().getColumn(0).setPreferredWidth(30);  // Checkbox
-        instancesTable.getColumnModel().getColumn(1).setPreferredWidth(80);  // Priority
-        instancesTable.getColumnModel().getColumn(2).setPreferredWidth(60);  // Index
-        instancesTable.getColumnModel().getColumn(3).setPreferredWidth(180); // Name
-        instancesTable.getColumnModel().getColumn(4).setPreferredWidth(200); // Status
-        instancesTable.getColumnModel().getColumn(5).setPreferredWidth(250); // Module Queue
-        instancesTable.getColumnModel().getColumn(6).setPreferredWidth(200); // Actions
+        instancesTable.getColumnModel().getColumn(1).setPreferredWidth(60);  // Index
+        instancesTable.getColumnModel().getColumn(2).setPreferredWidth(180); // Name
+        instancesTable.getColumnModel().getColumn(3).setPreferredWidth(200); // Status
+        instancesTable.getColumnModel().getColumn(4).setPreferredWidth(250); // Modules
+        instancesTable.getColumnModel().getColumn(5).setPreferredWidth(200); // Actions
 
         // Custom renderers
-        instancesTable.getColumnModel().getColumn(4).setCellRenderer(new StatusCellRenderer());
-        instancesTable.getColumnModel().getColumn(5).setCellRenderer(new ModuleQueueRenderer());
-        instancesTable.getColumnModel().getColumn(6).setCellRenderer(new ActionCellRenderer(this, instancesTable));
-        instancesTable.getColumnModel().getColumn(6).setCellEditor(new ActionCellRenderer(this, instancesTable));
+        instancesTable.getColumnModel().getColumn(3).setCellRenderer(new StatusCellRenderer());
+        instancesTable.getColumnModel().getColumn(4).setCellRenderer(new ModuleQueueRenderer());
+        instancesTable.getColumnModel().getColumn(5).setCellRenderer(new ActionCellRenderer(this, instancesTable));
+        instancesTable.getColumnModel().getColumn(5).setCellEditor(new ActionCellRenderer(this, instancesTable));
 
         // Selection handling
         instancesTable.getModel().addTableModelListener(e -> {
@@ -317,8 +236,6 @@ public class Main extends JFrame {
                 setForeground(isSelected ? Color.WHITE : new Color(33, 150, 243));
             } else if (status.contains("Stopped") || status.contains("⏹️")) {
                 setForeground(isSelected ? Color.WHITE : new Color(158, 158, 158));
-            } else if (status.contains("Queued") || status.contains("⏳")) {
-                setForeground(isSelected ? Color.WHITE : new Color(156, 39, 176));
             } else {
                 setForeground(isSelected ? Color.WHITE : Color.LIGHT_GRAY);
             }
@@ -353,7 +270,7 @@ public class Main extends JFrame {
 
     private JButton createButton(String text, ActionListener action) {
         JButton btn = new JButton(text);
-        btn.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        btn.setFont(new Font("Segoe UI", Font.BOLD, 12));
         btn.addActionListener(action);
         return btn;
     }
@@ -370,7 +287,7 @@ public class Main extends JFrame {
         for (int i = 0; i < tableModel.getRowCount(); i++) {
             Boolean selected = (Boolean) tableModel.getValueAt(i, 0);
             if (selected != null && selected) {
-                Integer index = (Integer) tableModel.getValueAt(i, 2);
+                Integer index = (Integer) tableModel.getValueAt(i, 1);
                 selectedInstances.add(index);
             }
         }
@@ -387,9 +304,11 @@ public class Main extends JFrame {
     private void updateSelectionActionsPanel() {
         int count = selectedInstances.size();
         if (count == 0) {
-            selectionStatusLabel.setText("No instances selected");
+            selectionStatusLabel.setText("No instances selected - Select instances to control them");
+        } else if (count == 1) {
+            selectionStatusLabel.setText("1 instance selected - Ready for commands");
         } else {
-            selectionStatusLabel.setText(count + " instance(s) selected - Actions available");
+            selectionStatusLabel.setText(count + " instances selected - Ready for batch commands");
         }
         
         // Update select all checkbox state
@@ -405,12 +324,12 @@ public class Main extends JFrame {
         }
     }
 
-    // Selection action methods
+    // Simplified selection action methods
     private void startSelectedInstances() {
         for (Integer index : selectedInstances) {
-            queueManager.requestInstanceStart(index);
+            startInstance(index);
         }
-        addConsoleMessage("🚀 Requested start for " + selectedInstances.size() + " selected instances");
+        addConsoleMessage("🚀 Starting " + selectedInstances.size() + " selected instances");
     }
 
     private void stopSelectedInstances() {
@@ -418,53 +337,6 @@ public class Main extends JFrame {
             stopInstance(index);
         }
         addConsoleMessage("🛑 Stopping " + selectedInstances.size() + " selected instances");
-    }
-
-    private void restartSelectedInstances() {
-        addConsoleMessage("🔄 Restarting " + selectedInstances.size() + " selected instances");
-        for (Integer index : selectedInstances) {
-            stopInstance(index);
-            // Wait a moment then start
-            Timer restartTimer = new Timer(3000, e -> queueManager.requestInstanceStart(index));
-            restartTimer.setRepeats(false);
-            restartTimer.start();
-        }
-    }
-
-    private void startAllModulesOnSelected() {
-        for (Integer index : selectedInstances) {
-            MemuInstance inst = getInstanceByIndex(index);
-            if (inst != null) {
-                // Start module chain for this instance
-                ModuleOrchestrator.startModuleChain(inst);
-            }
-        }
-        addConsoleMessage("▶️ Starting all modules on " + selectedInstances.size() + " selected instances");
-    }
-
-    private void pauseAllModulesOnSelected() {
-        addConsoleMessage("⏸️ Pausing all modules on " + selectedInstances.size() + " selected instances");
-        // Implementation for pausing modules
-    }
-
-    private void stopAllModulesOnSelected() {
-        for (Integer index : selectedInstances) {
-            MemuInstance inst = getInstanceByIndex(index);
-            if (inst != null) {
-                ModuleOrchestrator.stopModuleChain(inst);
-            }
-        }
-        addConsoleMessage("⏹️ Stopping all modules on " + selectedInstances.size() + " selected instances");
-    }
-
-    private void restartModuleChainsOnSelected() {
-        addConsoleMessage("🔄 Restarting module chains on " + selectedInstances.size() + " selected instances");
-        for (Integer index : selectedInstances) {
-            MemuInstance inst = getInstanceByIndex(index);
-            if (inst != null) {
-                ModuleOrchestrator.restartModuleChain(inst);
-            }
-        }
     }
 
     private void startGatheringOnSelected() {
@@ -477,16 +349,6 @@ public class Main extends JFrame {
         addConsoleMessage("🌾 Starting Auto Gather on " + selectedInstances.size() + " selected instances");
     }
 
-    private void startGiftClaimingOnSelected() {
-        for (Integer index : selectedInstances) {
-            MemuInstance inst = getInstanceByIndex(index);
-            if (inst != null) {
-                ModuleOrchestrator.startSpecificModule(inst, "Auto Gift Claim");
-            }
-        }
-        addConsoleMessage("🎁 Starting Auto Gift Claim on " + selectedInstances.size() + " selected instances");
-    }
-
     private void configureSelectedInstances() {
         if (selectedInstances.size() == 1) {
             Integer index = selectedInstances.iterator().next();
@@ -494,69 +356,48 @@ public class Main extends JFrame {
             if (inst != null) {
                 showModulesDialog(inst);
             }
+        } else if (selectedInstances.size() > 1) {
+            JOptionPane.showMessageDialog(this, 
+                "Please select only one instance to configure modules.\n" +
+                "Bulk configuration is not available yet.",
+                "Module Configuration", 
+                JOptionPane.INFORMATION_MESSAGE);
         } else {
-            // Bulk configuration dialog
-            showBulkModuleConfiguration();
+            JOptionPane.showMessageDialog(this, 
+                "Please select an instance to configure its modules.",
+                "Module Configuration", 
+                JOptionPane.INFORMATION_MESSAGE);
         }
     }
 
-    private void showBulkModuleConfiguration() {
-        // Implementation for bulk module configuration
-        addConsoleMessage("🛠️ Opening bulk configuration for " + selectedInstances.size() + " instances");
-        JOptionPane.showMessageDialog(this, 
-            "Bulk module configuration for " + selectedInstances.size() + " instances\n" +
-            "This feature will be implemented in the next update.",
-            "Bulk Configuration", 
-            JOptionPane.INFORMATION_MESSAGE);
-    }
-
-    private void showSystemSettings() {
-        SystemSettingsDialog dialog = new SystemSettingsDialog(this, systemSettings);
-        dialog.setVisible(true);
-        
-        if (dialog.wasModified()) {
-            queueManager.updateSettings(systemSettings);
-            addConsoleMessage("⚙️ System settings updated");
-            refreshInstances();
-        }
-    }
-
-    // Rest of the existing methods remain the same but with enhanced module queue display
+    // Simplified module queue display
     private String getModuleQueueDisplay(MemuInstance inst) {
         Map<String, ModuleState<?>> modules = instanceModules.getOrDefault(inst.index, new HashMap<>());
         StringBuilder display = new StringBuilder();
         
-        // Show enabled modules with icons
+        // Show enabled modules with simple icons
         boolean hasModules = false;
         if (modules.containsKey("Auto Start Game") && modules.get("Auto Start Game").enabled) {
-            display.append("[🎮Start] ");
+            display.append("🎮Game ");
             hasModules = true;
         }
         if (modules.containsKey("Auto Gather Resources") && modules.get("Auto Gather Resources").enabled) {
-            display.append("[🌾Gather] ");
+            display.append("🌾Gather ");
             hasModules = true;
         }
         if (modules.containsKey("Auto Gift Claim") && modules.get("Auto Gift Claim").enabled) {
-            display.append("[🎁Gift] ");
+            display.append("🎁Gift ");
             hasModules = true;
         }
         
         if (!hasModules) {
             display.append("No modules enabled");
         } else {
-            // Add status or next action
+            // Simple status
             if (inst.isAutoGatherRunning()) {
-                display.append("(Running)");
+                display.append("(Active)");
             } else {
-                InstanceQueueManager.InstanceStatus status = queueManager.getInstanceStatus(inst.index);
-                if (status == InstanceQueueManager.InstanceStatus.QUEUED) {
-                    int position = queueManager.getQueuePosition(inst.index);
-                    display.append("(Queued #").append(position).append(")");
-                } else if (status == InstanceQueueManager.InstanceStatus.HIBERNATING) {
-                    display.append("(Hibernating)");
-                } else {
-                    display.append("(Ready)");
-                }
+                display.append("(Ready)");
             }
         }
         
@@ -592,9 +433,6 @@ public class Main extends JFrame {
                                 freshInst.setState(hibernationState);
                             }
                         }
-                        
-                        // Update queue manager
-                        queueManager.registerInstance(freshInst.index, getInstancePriority(freshInst.index));
                     }
                     
                     instances = freshInstances;
@@ -604,11 +442,9 @@ public class Main extends JFrame {
                     for (MemuInstance inst : instances) {
                         String displayStatus = getDisplayStatus(inst);
                         String moduleQueue = getModuleQueueDisplay(inst);
-                        String priority = getInstancePriorityDisplay(inst.index);
                         
                         tableModel.addRow(new Object[]{
                             false, // Checkbox
-                            priority,
                             inst.index,
                             inst.name,
                             displayStatus,
@@ -617,7 +453,7 @@ public class Main extends JFrame {
                         });
                     }
                     
-                    addConsoleMessage("🔄 Refreshed " + instances.size() + " instances (Enhanced)");
+                    addConsoleMessage("🔄 Refreshed " + instances.size() + " instances");
                     updateSelectionActionsPanel();
                     
                 } catch (Exception ex) {
@@ -627,23 +463,7 @@ public class Main extends JFrame {
         }.execute();
     }
 
-    private String getInstancePriorityDisplay(int index) {
-        InstanceQueueManager.Priority priority = queueManager.getInstancePriority(index);
-        switch (priority) {
-            case HIGH: return "High ⭐";
-            case LOW: return "Low ⭇";
-            default: return "Normal";
-        }
-    }
-
-    private InstanceQueueManager.Priority getInstancePriority(int index) {
-        // Default to normal priority - this could be made configurable
-        return InstanceQueueManager.Priority.NORMAL;
-    }
-
-    // Include all the existing methods from the original Main.java...
-    // (createConsolePanel, addConsoleMessage, etc. - keeping them exactly the same)
-    
+    // Include all the essential existing methods...
     private JPanel createConsolePanel() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(BorderFactory.createTitledBorder("Activity Console"));
@@ -827,7 +647,7 @@ public class Main extends JFrame {
         }
         
         int result = JOptionPane.showConfirmDialog(this,
-            "This will optimize " + stoppedInstances.size() + " stopped instance(s) to 480x800 resolution.\n" +
+            "This will optimize " + stoppedInstances.size() + " stopped instance(s) to proper resolution.\n" +
             "This process may take several minutes.\n\nContinue?",
             "Optimize All Instances",
             JOptionPane.YES_NO_OPTION,
@@ -879,7 +699,7 @@ public class Main extends JFrame {
             @Override
             protected void done() {
                 optimizeAllButton.setEnabled(true);
-                optimizeAllButton.setText("Optimize All");
+                optimizeAllButton.setText("Optimize All Instances");
                 
                 addConsoleMessage("🎉 Optimization complete: " + successCount + " successful, " + failureCount + " failed");
                 
@@ -959,13 +779,6 @@ public class Main extends JFrame {
         String instanceState = inst.getState();
         if (instanceState != null && !instanceState.equals("Idle")) {
             return instanceState;
-        }
-        
-        // Check queue status
-        InstanceQueueManager.InstanceStatus queueStatus = queueManager.getInstanceStatus(inst.index);
-        if (queueStatus == InstanceQueueManager.InstanceStatus.QUEUED) {
-            int position = queueManager.getQueuePosition(inst.index);
-            return "⏳ Queued (Position #" + position + ")";
         }
         
         return inst.status;
@@ -1048,7 +861,7 @@ public class Main extends JFrame {
         String instanceName = inst != null ? inst.name : "Instance " + index;
         
         if (autoStartEnabled || autoGatherEnabled) {
-            // Use new module orchestrator instead of individual module starts
+            // Use module orchestrator to start the chain
             ModuleOrchestrator.startModuleChain(inst);
         } else {
             addConsoleMessage("ℹ️ No auto modules enabled for " + instanceName);
@@ -1088,17 +901,17 @@ public class Main extends JFrame {
                     }
                     
                     String currentStatus = getDisplayStatus(inst);
-                    Object tableValue = tableModel.getValueAt(i, 4); // Status column
+                    Object tableValue = tableModel.getValueAt(i, 3); // Status column
                     
                     if (!currentStatus.equals(tableValue)) {
-                        tableModel.setValueAt(currentStatus, i, 4);
+                        tableModel.setValueAt(currentStatus, i, 3);
                     }
                     
                     // Update module queue display
                     String moduleQueue = getModuleQueueDisplay(inst);
-                    Object currentModuleQueue = tableModel.getValueAt(i, 5);
+                    Object currentModuleQueue = tableModel.getValueAt(i, 4);
                     if (!moduleQueue.equals(currentModuleQueue)) {
-                        tableModel.setValueAt(moduleQueue, i, 5);
+                        tableModel.setValueAt(moduleQueue, i, 4);
                     }
                 }
             });
