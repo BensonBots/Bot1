@@ -50,6 +50,7 @@ public class Main extends JFrame {
         loadSettings();
         refreshInstances();
         startCleanStatusUpdater();
+        addModuleManagementMenu(); // Add the modules menu
         addConsoleMessage("🚀 Benson v1.0.3 started - Ready to automate your game!");
     }
 
@@ -324,7 +325,154 @@ public class Main extends JFrame {
         }
     }
 
-    // Simplified selection action methods
+    // === ENHANCED MODULE CONFIGURATION METHODS ===
+
+    /**
+     * Show the enhanced module configuration dialog
+     */
+    public void showModulesDialog(MemuInstance instance) {
+        new EnhancedModuleConfigDialog(this, instance).setVisible(true);
+    }
+
+    /**
+     * Enhanced module chain starter that uses priority-based orchestrator
+     */
+    private void enableAutoStartIfConfigured(int index) {
+        Map<String, ModuleState<?>> modules = instanceModules.getOrDefault(index, Collections.emptyMap());
+        
+        MemuInstance inst = getInstanceByIndex(index);
+        String instanceName = inst != null ? inst.name : "Instance " + index;
+        
+        // Check if any modules are enabled
+        boolean hasEnabledModules = modules.values().stream()
+            .anyMatch(moduleState -> moduleState != null && moduleState.enabled);
+        
+        if (hasEnabledModules) {
+            // Use the new priority-based orchestrator
+            addToConsole("🎯 " + instanceName + " - Starting priority-based module chain");
+            PriorityModuleOrchestrator.startModuleChain(inst);
+        } else {
+            addToConsole("ℹ️ " + instanceName + " - No modules enabled");
+        }
+    }
+
+    /**
+     * Enhanced module queue display that shows priority order
+     */
+    private String getModuleQueueDisplay(MemuInstance inst) {
+        Map<String, ModuleState<?>> modules = instanceModules.getOrDefault(inst.index, new HashMap<>());
+        StringBuilder display = new StringBuilder();
+        
+        // Load execution settings to get priority order
+        ModuleState<?> executionModule = modules.get("Module Execution Settings");
+        List<String> priorityOrder = new ArrayList<>();
+        
+        if (executionModule != null && executionModule.settings != null) {
+            try {
+                String settingsStr = executionModule.settings.toString();
+                String[] parts = settingsStr.split(";");
+                
+                for (String part : parts) {
+                    if (part.startsWith("Priority:")) {
+                        String priorityStr = part.substring(9);
+                        if (!priorityStr.isEmpty()) {
+                            priorityOrder = Arrays.asList(priorityStr.split(","));
+                        }
+                        break;
+                    }
+                }
+            } catch (Exception e) {
+                // Ignore parsing errors
+            }
+        }
+        
+        // Show enabled modules in priority order
+        boolean hasModules = false;
+        int priority = 1;
+        
+        if (!priorityOrder.isEmpty()) {
+            for (String moduleName : priorityOrder) {
+                moduleName = moduleName.trim();
+                ModuleState<?> moduleState = modules.get(moduleName);
+                if (moduleState != null && moduleState.enabled) {
+                    if (hasModules) display.append(" → ");
+                    display.append(priority++).append(".").append(getModuleShortName(moduleName));
+                    hasModules = true;
+                }
+            }
+        } else {
+            // Fallback to showing enabled modules without order
+            String[] moduleOrder = {"Auto Start Game", "Auto Gather Resources", "Auto Gift Claim", 
+                                   "Auto Building & Upgrades", "Auto Troop Training", "Auto Daily Tasks"};
+            
+            for (String moduleName : moduleOrder) {
+                ModuleState<?> moduleState = modules.get(moduleName);
+                if (moduleState != null && moduleState.enabled) {
+                    if (hasModules) display.append(" → ");
+                    display.append(getModuleShortName(moduleName));
+                    hasModules = true;
+                }
+            }
+        }
+        
+        if (!hasModules) {
+            display.append("No modules enabled");
+        } else {
+            // Show current status
+            if (PriorityModuleOrchestrator.isChainRunning(inst.index)) {
+                display.append(" (Active)");
+            } else if (inst.isAutoGatherRunning()) {
+                display.append(" (Gathering)");
+            } else {
+                display.append(" (Ready)");
+            }
+        }
+        
+        return display.toString();
+    }
+
+    /**
+     * Get short name for module display
+     */
+    private String getModuleShortName(String fullName) {
+        switch (fullName) {
+            case "Auto Start Game": return "🎮Start";
+            case "Auto Gather Resources": return "🌾Gather";
+            case "Auto Gift Claim": return "🎁Gift";
+            case "Auto Building & Upgrades": return "🏗️Build";
+            case "Auto Troop Training": return "⚔️Troop";
+            case "Auto Daily Tasks": return "📋Daily";
+            default: return fullName.substring(0, Math.min(fullName.length(), 8));
+        }
+    }
+
+    /**
+     * Enhanced status display that shows module chain progress
+     */
+    private String getDisplayStatus(MemuInstance inst) {
+        String hibernationState = hibernationStates.get(inst.index);
+        if (hibernationState != null) {
+            return hibernationState;
+        }
+        
+        // Check if priority module chain is running
+        if (PriorityModuleOrchestrator.isChainRunning(inst.index)) {
+            String chainStatus = PriorityModuleOrchestrator.getChainStatus(inst.index);
+            if (chainStatus != null && !chainStatus.equals("No active chain")) {
+                return chainStatus;
+            }
+        }
+        
+        String instanceState = inst.getState();
+        if (instanceState != null && !instanceState.equals("Idle")) {
+            return instanceState;
+        }
+        
+        return inst.status;
+    }
+
+    // === SELECTION ACTION METHODS (ENHANCED) ===
+
     private void startSelectedInstances() {
         for (Integer index : selectedInstances) {
             startInstance(index);
@@ -332,23 +480,46 @@ public class Main extends JFrame {
         addConsoleMessage("🚀 Starting " + selectedInstances.size() + " selected instances");
     }
 
+    /**
+     * Updated stop selected instances method to use priority orchestrator
+     */
     private void stopSelectedInstances() {
         for (Integer index : selectedInstances) {
+            MemuInstance inst = getInstanceByIndex(index);
+            if (inst != null) {
+                PriorityModuleOrchestrator.stopModuleChain(inst);
+            }
             stopInstance(index);
         }
         addConsoleMessage("🛑 Stopping " + selectedInstances.size() + " selected instances");
     }
 
+    /**
+     * Updated selection action methods to work with priority orchestrator
+     */
     private void startGatheringOnSelected() {
         for (Integer index : selectedInstances) {
             MemuInstance inst = getInstanceByIndex(index);
             if (inst != null) {
-                ModuleOrchestrator.startSpecificModule(inst, "Auto Gather Resources");
+                // Check if Auto Gather is enabled, if not start it specifically
+                Map<String, ModuleState<?>> modules = instanceModules.getOrDefault(index, new HashMap<>());
+                ModuleState<?> gatherModule = modules.get("Auto Gather Resources");
+                
+                if (gatherModule != null && gatherModule.enabled) {
+                    // Start the full module chain
+                    PriorityModuleOrchestrator.startModuleChain(inst);
+                } else {
+                    // Start just gathering
+                    PriorityModuleOrchestrator.startSpecificModule(inst, "Auto Gather Resources");
+                }
             }
         }
         addConsoleMessage("🌾 Starting Auto Gather on " + selectedInstances.size() + " selected instances");
     }
 
+    /**
+     * Enhanced configure selected instances method
+     */
     private void configureSelectedInstances() {
         if (selectedInstances.size() == 1) {
             Integer index = selectedInstances.iterator().next();
@@ -357,11 +528,8 @@ public class Main extends JFrame {
                 showModulesDialog(inst);
             }
         } else if (selectedInstances.size() > 1) {
-            JOptionPane.showMessageDialog(this, 
-                "Please select only one instance to configure modules.\n" +
-                "Bulk configuration is not available yet.",
-                "Module Configuration", 
-                JOptionPane.INFORMATION_MESSAGE);
+            // Show batch configuration dialog
+            showBatchConfigurationDialog();
         } else {
             JOptionPane.showMessageDialog(this, 
                 "Please select an instance to configure its modules.",
@@ -370,41 +538,407 @@ public class Main extends JFrame {
         }
     }
 
-    // Simplified module queue display
-    private String getModuleQueueDisplay(MemuInstance inst) {
-        Map<String, ModuleState<?>> modules = instanceModules.getOrDefault(inst.index, new HashMap<>());
-        StringBuilder display = new StringBuilder();
+    // === BATCH CONFIGURATION METHODS ===
+
+    /**
+     * Batch configuration dialog for multiple instances
+     */
+    private void showBatchConfigurationDialog() {
+        String[] options = {
+            "Copy settings from one instance to others",
+            "Enable/disable specific modules on all selected",
+            "Cancel"
+        };
         
-        // Show enabled modules with simple icons
-        boolean hasModules = false;
-        if (modules.containsKey("Auto Start Game") && modules.get("Auto Start Game").enabled) {
-            display.append("🎮Game ");
-            hasModules = true;
-        }
-        if (modules.containsKey("Auto Gather Resources") && modules.get("Auto Gather Resources").enabled) {
-            display.append("🌾Gather ");
-            hasModules = true;
-        }
-        if (modules.containsKey("Auto Gift Claim") && modules.get("Auto Gift Claim").enabled) {
-            display.append("🎁Gift ");
-            hasModules = true;
-        }
+        int choice = JOptionPane.showOptionDialog(this,
+            "Configure " + selectedInstances.size() + " selected instances:",
+            "Batch Configuration",
+            JOptionPane.YES_NO_CANCEL_OPTION,
+            JOptionPane.QUESTION_MESSAGE,
+            null,
+            options,
+            options[0]);
         
-        if (!hasModules) {
-            display.append("No modules enabled");
-        } else {
-            // Simple status
-            if (inst.isAutoGatherRunning()) {
-                display.append("(Active)");
-            } else {
-                display.append("(Ready)");
+        switch (choice) {
+            case 0:
+                showCopySettingsDialog();
+                break;
+            case 1:
+                showBatchModuleToggleDialog();
+                break;
+            default:
+                // Cancel - do nothing
+                break;
+        }
+    }
+
+    /**
+     * Copy settings from one instance to others
+     */
+    private void showCopySettingsDialog() {
+        // Get list of selected instances for source selection
+        List<MemuInstance> selectedInstList = new ArrayList<>();
+        for (Integer index : selectedInstances) {
+            MemuInstance inst = getInstanceByIndex(index);
+            if (inst != null) {
+                selectedInstList.add(inst);
             }
         }
         
-        return display.toString();
+        if (selectedInstList.size() < 2) {
+            JOptionPane.showMessageDialog(this,
+                "Need at least 2 instances selected to copy settings.",
+                "Copy Settings",
+                JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        
+        MemuInstance sourceInstance = (MemuInstance) JOptionPane.showInputDialog(this,
+            "Select source instance to copy settings FROM:",
+            "Copy Settings",
+            JOptionPane.QUESTION_MESSAGE,
+            null,
+            selectedInstList.toArray(),
+            selectedInstList.get(0));
+        
+        if (sourceInstance != null) {
+            Map<String, ModuleState<?>> sourceModules = instanceModules.get(sourceInstance.index);
+            if (sourceModules == null || sourceModules.isEmpty()) {
+                JOptionPane.showMessageDialog(this,
+                    "Source instance has no module configuration to copy.",
+                    "Copy Settings",
+                    JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            
+            int targetCount = 0;
+            for (MemuInstance targetInstance : selectedInstList) {
+                if (targetInstance.index != sourceInstance.index) {
+                    // Copy the entire module configuration
+                    Map<String, ModuleState<?>> copiedModules = new HashMap<>();
+                    for (Map.Entry<String, ModuleState<?>> entry : sourceModules.entrySet()) {
+                        ModuleState<?> original = entry.getValue();
+                        copiedModules.put(entry.getKey(), new ModuleState<>(original.enabled, original.settings));
+                    }
+                    
+                    instanceModules.put(targetInstance.index, copiedModules);
+                    targetCount++;
+                }
+            }
+            
+            saveSettings();
+            
+            JOptionPane.showMessageDialog(this,
+                String.format("Successfully copied module configuration from %s to %d other instance(s).\n\n" +
+                             "Copied settings include:\n" +
+                             "• Module enable/disable states\n" +
+                             "• Module priority order\n" +
+                             "• Execution settings\n" +
+                             "• Individual module configurations",
+                             sourceInstance.name, targetCount),
+                "Copy Settings Complete",
+                JOptionPane.INFORMATION_MESSAGE);
+            
+            addConsoleMessage("📋 Copied module settings from " + sourceInstance.name + " to " + targetCount + " instances");
+        }
     }
 
-    // Continue with existing methods...
+    /**
+     * Batch enable/disable modules dialog
+     */
+    private void showBatchModuleToggleDialog() {
+        String[] modules = {
+            "Auto Start Game",
+            "Auto Gather Resources", 
+            "Auto Gift Claim",
+            "Auto Building & Upgrades",
+            "Auto Troop Training",
+            "Auto Daily Tasks"
+        };
+        
+        JPanel panel = new JPanel(new GridLayout(modules.length + 1, 3, 5, 5));
+        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        
+        // Header
+        panel.add(new JLabel("Module"));
+        panel.add(new JLabel("Enable"));
+        panel.add(new JLabel("Disable"));
+        
+        ButtonGroup[] groups = new ButtonGroup[modules.length];
+        JRadioButton[] enableButtons = new JRadioButton[modules.length];
+        JRadioButton[] disableButtons = new JRadioButton[modules.length];
+        
+        for (int i = 0; i < modules.length; i++) {
+            groups[i] = new ButtonGroup();
+            
+            JLabel moduleLabel = new JLabel(modules[i]);
+            enableButtons[i] = new JRadioButton();
+            disableButtons[i] = new JRadioButton();
+            
+            groups[i].add(enableButtons[i]);
+            groups[i].add(disableButtons[i]);
+            
+            panel.add(moduleLabel);
+            panel.add(enableButtons[i]);
+            panel.add(disableButtons[i]);
+        }
+        
+        int result = JOptionPane.showConfirmDialog(this, panel,
+            "Batch Module Configuration - " + selectedInstances.size() + " instances",
+            JOptionPane.OK_CANCEL_OPTION,
+            JOptionPane.PLAIN_MESSAGE);
+        
+        if (result == JOptionPane.OK_OPTION) {
+            int changedInstances = 0;
+            int totalChanges = 0;
+            
+            for (Integer instanceIndex : selectedInstances) {
+                Map<String, ModuleState<?>> instanceModules = Main.instanceModules
+                    .getOrDefault(instanceIndex, new HashMap<>());
+                boolean instanceChanged = false;
+                
+                for (int i = 0; i < modules.length; i++) {
+                    String moduleName = modules[i];
+                    
+                    if (enableButtons[i].isSelected()) {
+                        ModuleState<?> currentState = instanceModules.get(moduleName);
+                        Object settings = currentState != null ? currentState.settings : null;
+                        instanceModules.put(moduleName, new ModuleState<>(true, settings));
+                        instanceChanged = true;
+                        totalChanges++;
+                    } else if (disableButtons[i].isSelected()) {
+                        ModuleState<?> currentState = instanceModules.get(moduleName);
+                        Object settings = currentState != null ? currentState.settings : null;
+                        instanceModules.put(moduleName, new ModuleState<>(false, settings));
+                        instanceChanged = true;
+                        totalChanges++;
+                    }
+                }
+                
+                if (instanceChanged) {
+                    Main.instanceModules.put(instanceIndex, instanceModules);
+                    changedInstances++;
+                }
+            }
+            
+            if (changedInstances > 0) {
+                saveSettings();
+                
+                JOptionPane.showMessageDialog(this,
+                    String.format("Batch configuration completed!\n\n" +
+                                 "Changed %d module setting(s) across %d instance(s).",
+                                 totalChanges, changedInstances),
+                    "Batch Configuration Complete",
+                    JOptionPane.INFORMATION_MESSAGE);
+                
+                addConsoleMessage("⚙️ Applied batch module changes to " + changedInstances + " instances (" + totalChanges + " total changes)");
+            } else {
+                JOptionPane.showMessageDialog(this,
+                    "No changes were made.",
+                    "Batch Configuration",
+                    JOptionPane.INFORMATION_MESSAGE);
+            }
+        }
+    }
+
+    // === MODULE MANAGEMENT MENU ===
+
+    /**
+     * Add system menu item for global module management
+     */
+    private void addModuleManagementMenu() {
+        JMenuBar menuBar = getJMenuBar();
+        if (menuBar == null) {
+            menuBar = new JMenuBar();
+            setJMenuBar(menuBar);
+        }
+        
+        JMenu modulesMenu = new JMenu("Modules");
+        
+        JMenuItem globalSettings = new JMenuItem("Global Module Settings");
+        globalSettings.addActionListener(e -> showGlobalModuleSettings());
+        
+        JMenuItem exportSettings = new JMenuItem("Export Module Configurations");
+        exportSettings.addActionListener(e -> exportModuleConfigurations());
+        
+        JMenuItem importSettings = new JMenuItem("Import Module Configurations");
+        importSettings.addActionListener(e -> importModuleConfigurations());
+        
+        JMenuItem resetAllSettings = new JMenuItem("Reset All Module Settings");
+        resetAllSettings.addActionListener(e -> resetAllModuleSettings());
+        
+        modulesMenu.add(globalSettings);
+        modulesMenu.addSeparator();
+        modulesMenu.add(exportSettings);
+        modulesMenu.add(importSettings);
+        modulesMenu.addSeparator();
+        modulesMenu.add(resetAllSettings);
+        
+        menuBar.add(modulesMenu);
+    }
+
+    /**
+     * Show global module settings dialog
+     */
+    private void showGlobalModuleSettings() {
+        JDialog dialog = new JDialog(this, "Global Module Settings", true);
+        dialog.setSize(500, 300);
+        dialog.setLocationRelativeTo(this);
+        
+        JPanel panel = new JPanel(new BorderLayout());
+        
+        JTextArea infoText = new JTextArea(
+            "Global Module Management\n\n" +
+            "This dialog allows you to manage module settings across all instances.\n\n" +
+            "Current Statistics:\n" +
+            "• Total instances: " + instances.size() + "\n" +
+            "• Instances with modules configured: " + instanceModules.size() + "\n" +
+            "• Total module configurations: " + instanceModules.values().stream()
+                .mapToInt(Map::size).sum() + "\n\n" +
+            "Use the Modules menu to export/import configurations or reset settings.\n" +
+            "Individual instance configuration is available through the 'Configure Modules' button."
+        );
+        infoText.setEditable(false);
+        infoText.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        
+        JButton closeBtn = new JButton("Close");
+        closeBtn.addActionListener(e -> dialog.dispose());
+        
+        JPanel buttonPanel = new JPanel(new FlowLayout());
+        buttonPanel.add(closeBtn);
+        
+        panel.add(infoText, BorderLayout.CENTER);
+        panel.add(buttonPanel, BorderLayout.SOUTH);
+        
+        dialog.add(panel);
+        dialog.setVisible(true);
+    }
+
+    /**
+     * Export module configurations to file
+     */
+    private void exportModuleConfigurations() {
+        try {
+            JFileChooser fileChooser = new JFileChooser();
+            fileChooser.setDialogTitle("Export Module Configurations");
+            fileChooser.setSelectedFile(new File("module_configurations_" + 
+                LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")) + ".json"));
+            
+            int result = fileChooser.showSaveDialog(this);
+            if (result == JFileChooser.APPROVE_OPTION) {
+                File file = fileChooser.getSelectedFile();
+                
+                try (FileWriter writer = new FileWriter(file)) {
+                    Gson gson = new GsonBuilder()
+                        .registerTypeAdapter(new TypeToken<ModuleState<?>>(){}.getType(), new ModuleStateAdapter())
+                        .setPrettyPrinting()
+                        .create();
+                    
+                    java.lang.reflect.Type type = new TypeToken<Map<Integer, Map<String, ModuleState<?>>>>(){}.getType();
+                    gson.toJson(instanceModules, type, writer);
+                    
+                    JOptionPane.showMessageDialog(this,
+                        "Module configurations exported successfully to:\n" + file.getAbsolutePath(),
+                        "Export Complete",
+                        JOptionPane.INFORMATION_MESSAGE);
+                    
+                    addConsoleMessage("📤 Exported module configurations to " + file.getName());
+                }
+            }
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this,
+                "Error exporting configurations: " + e.getMessage(),
+                "Export Error",
+                JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    /**
+     * Import module configurations from file
+     */
+    private void importModuleConfigurations() {
+        try {
+            JFileChooser fileChooser = new JFileChooser();
+            fileChooser.setDialogTitle("Import Module Configurations");
+            fileChooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("JSON files", "json"));
+            
+            int result = fileChooser.showOpenDialog(this);
+            if (result == JFileChooser.APPROVE_OPTION) {
+                File file = fileChooser.getSelectedFile();
+                
+                int confirmResult = JOptionPane.showConfirmDialog(this,
+                    "Import module configurations from:\n" + file.getAbsolutePath() + "\n\n" +
+                    "This will overwrite existing module settings.\nContinue?",
+                    "Confirm Import",
+                    JOptionPane.YES_NO_OPTION,
+                    JOptionPane.WARNING_MESSAGE);
+                
+                if (confirmResult == JOptionPane.YES_OPTION) {
+                    try (FileReader reader = new FileReader(file)) {
+                        Gson gson = new GsonBuilder()
+                            .registerTypeAdapter(new TypeToken<ModuleState<?>>(){}.getType(), new ModuleStateAdapter())
+                            .create();
+                        
+                        java.lang.reflect.Type type = new TypeToken<Map<Integer, Map<String, ModuleState<?>>>>(){}.getType();
+                        Map<Integer, Map<String, ModuleState<?>>> imported = gson.fromJson(reader, type);
+                        
+                        if (imported != null) {
+                            instanceModules.putAll(imported);
+                            saveSettings();
+                            
+                            JOptionPane.showMessageDialog(this,
+                                "Module configurations imported successfully!\n\n" +
+                                "Imported settings for " + imported.size() + " instance(s).",
+                                "Import Complete",
+                                JOptionPane.INFORMATION_MESSAGE);
+                            
+                            addConsoleMessage("📥 Imported module configurations from " + file.getName());
+                        } else {
+                            throw new Exception("Invalid file format");
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this,
+                "Error importing configurations: " + e.getMessage(),
+                "Import Error",
+                JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    /**
+     * Reset all module settings
+     */
+    private void resetAllModuleSettings() {
+        int result = JOptionPane.showConfirmDialog(this,
+            "Reset ALL module settings for ALL instances?\n\n" +
+            "This will:\n" +
+            "• Disable all modules on all instances\n" +
+            "• Clear all module configurations\n" +
+            "• Reset execution priorities to defaults\n\n" +
+            "This action cannot be undone!",
+            "Reset All Module Settings",
+            JOptionPane.YES_NO_OPTION,
+            JOptionPane.WARNING_MESSAGE);
+        
+        if (result == JOptionPane.YES_OPTION) {
+            instanceModules.clear();
+            saveSettings();
+            
+            JOptionPane.showMessageDialog(this,
+                "All module settings have been reset.\n\n" +
+                "All instances now have no enabled modules.\n" +
+                "You can reconfigure modules using the 'Configure Modules' button.",
+                "Reset Complete",
+                JOptionPane.INFORMATION_MESSAGE);
+            
+            addConsoleMessage("🔄 Reset all module settings - all instances now have clean configuration");
+        }
+    }
+
+    // === ORIGINAL MAIN METHODS (EXISTING CODE) ===
+
     public void refreshInstances() {
         new SwingWorker<List<MemuInstance>, Void>() {
             @Override 
@@ -463,7 +997,6 @@ public class Main extends JFrame {
         }.execute();
     }
 
-    // Include all the essential existing methods...
     private JPanel createConsolePanel() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(BorderFactory.createTitledBorder("Activity Console"));
@@ -541,7 +1074,6 @@ public class Main extends JFrame {
         }
     }
 
-    // Add other essential methods...
     public void createNewInstance() {
         try {
             addConsoleMessage("🔧 Creating new MEmu instance...");
@@ -770,20 +1302,6 @@ public class Main extends JFrame {
         addConsoleMessage("📈 March Tracker opened");
     }
 
-    private String getDisplayStatus(MemuInstance inst) {
-        String hibernationState = hibernationStates.get(inst.index);
-        if (hibernationState != null) {
-            return hibernationState;
-        }
-        
-        String instanceState = inst.getState();
-        if (instanceState != null && !instanceState.equals("Idle")) {
-            return instanceState;
-        }
-        
-        return inst.status;
-    }
-
     private List<MemuInstance> getInstancesFromMemuc() throws IOException {
         List<MemuInstance> result = new ArrayList<>();
         Process p = Runtime.getRuntime().exec(new String[]{MEMUC_PATH, "listvms"});
@@ -811,7 +1329,7 @@ public class Main extends JFrame {
             Process p = Runtime.getRuntime().exec(
                 new String[]{MEMUC_PATH, "isvmrunning", "-i", String.valueOf(index)});
             
-            boolean finished = p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+            boolean finished = p.waitFor(5, TimeUnit.SECONDS);
             if (!finished) {
                 p.destroyForcibly();
                 return "Unknown";
@@ -848,39 +1366,20 @@ public class Main extends JFrame {
         });
     }
 
-    private void enableAutoStartIfConfigured(int index) {
-        Map<String, ModuleState<?>> modules = instanceModules.getOrDefault(index, Collections.emptyMap());
-        
-        ModuleState<?> autoStartModule = modules.get("Auto Start Game");
-        ModuleState<?> autoGatherModule = modules.get("Auto Gather Resources");
-        
-        boolean autoStartEnabled = autoStartModule != null && autoStartModule.enabled;
-        boolean autoGatherEnabled = autoGatherModule != null && autoGatherModule.enabled;
-        
-        MemuInstance inst = getInstanceByIndex(index);
-        String instanceName = inst != null ? inst.name : "Instance " + index;
-        
-        if (autoStartEnabled || autoGatherEnabled) {
-            // Use module orchestrator to start the chain
-            ModuleOrchestrator.startModuleChain(inst);
-        } else {
-            addConsoleMessage("ℹ️ No auto modules enabled for " + instanceName);
-        }
-    }
-
+    /**
+     * Updated stop instance method to use priority orchestrator
+     */
     public void stopInstance(int index) {
         MemuInstance inst = getInstanceByIndex(index);
         if (inst != null) {
             addConsoleMessage("🛑 Stopping " + inst.name);
             hibernationStates.remove(index);
-            ModuleOrchestrator.stopModuleChain(inst);
+            
+            // Stop the priority-based module chain
+            PriorityModuleOrchestrator.stopModuleChain(inst);
         }
         
         MemuActions.stopInstance(this, index, this::refreshInstances);
-    }
-
-    public void showModulesDialog(MemuInstance instance) {
-        new ModuleListDialog(this, instance).setVisible(true);
     }
 
     public MemuInstance getInstanceByIndex(int index) {
@@ -891,7 +1390,7 @@ public class Main extends JFrame {
     }
 
     private void startCleanStatusUpdater() {
-        statusTimer = new javax.swing.Timer(1000, e -> {
+        statusTimer = new Timer(1000, e -> {
             SwingUtilities.invokeLater(() -> {
                 for (int i = 0; i < instances.size() && i < tableModel.getRowCount(); i++) {
                     MemuInstance inst = instances.get(i);
