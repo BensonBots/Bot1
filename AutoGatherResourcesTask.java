@@ -1,5 +1,6 @@
 package newgame;
 
+import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 import java.awt.AWTException;
 import java.awt.Point;
@@ -12,8 +13,9 @@ import java.util.Map;
 import javax.imageio.ImageIO;
 
 /**
- * FIXED: AutoGatherResourcesTask with proper hibernation status updates and Auto Start Game on wake
- * FIXED: Status updates to Main for hibernation display
+ * FIXED: AutoGatherResourcesTask with proper hibernation status updates and dynamic deployment
+ * FIXED: Countdown timer updates every 10 seconds
+ * FIXED: Uses settings.maxQueues and resource loop instead of hardcoded deployment
  * FIXED: Auto Start Game runs when waking up from hibernation
  */
 public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
@@ -44,6 +46,38 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
         loadGatherSettings();
     }
     
+    /**
+     * CRITICAL FIX: Force update Main GUI table directly with hibernation status
+     */
+    private void forceUpdateMainGUIStatus(String status) {
+        try {
+            // Set the instance state
+            instance.setState(status);
+            
+            // CRITICAL: Directly update Main's table via SwingUtilities
+            SwingUtilities.invokeLater(() -> {
+                try {
+                    // Get Main instance and update table directly
+                    Main mainInstance = Main.getInstance();
+                    if (mainInstance != null) {
+                        mainInstance.forceUpdateInstanceStatus(instance.index, status);
+                    } else {
+                        System.err.println("❌ Main instance is null, cannot force update GUI");
+                    }
+                } catch (Exception e) {
+                    System.err.println("❌ Error force updating Main GUI: " + e.getMessage());
+                    e.printStackTrace();
+                }
+            });
+            
+            System.out.println("🔥 [FORCE UPDATE] " + instance.name + " status forced to: " + status);
+            
+        } catch (Exception e) {
+            System.err.println("❌ Error in force update: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    
     private void loadGatherSettings() {
         Map<String, ModuleState<?>> modules = Main.instanceModules.getOrDefault(instance.index, new java.util.HashMap<>());
         ModuleState<?> gatherModule = modules.get("Auto Gather Resources");
@@ -66,7 +100,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
             Main.addToConsole("🔄 Hibernating Auto Gather started for " + instance.name);
             System.out.println("🔄 Starting Hibernating AutoGatherResourcesTask for instance " + instance.index);
             
-            // MAIN HIBERNATION LOOP
+            // MAIN HIBERNATION LOOP - FIXED: More frequent countdown updates
             boolean initialDeploymentDone = false;
             
             while (!shouldStop && !isCancelled()) {
@@ -94,9 +128,9 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                             // Reset to deploy new marches
                             initialDeploymentDone = false;
                         } else {
-                            // Still hibernating - update status with countdown
+                            // FIXED: Update hibernation countdown more frequently
                             updateHibernationStatusWithForce();
-                            Thread.sleep(30000); // Check every 30 seconds
+                            Thread.sleep(10000); // CHANGED: Check every 10 seconds instead of 30
                         }
                     }
                     
@@ -105,7 +139,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                     break;
                 } catch (Exception e) {
                     System.err.println("Error in hibernating gather loop: " + e.getMessage());
-                    publish("❌ Error: " + e.getMessage());
+                    forceUpdateMainGUIStatus("❌ Error: " + e.getMessage());
                     Thread.sleep(10000);
                 }
             }
@@ -141,7 +175,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
             }
             
             Main.addToConsole("🎮 " + instance.name + " running Auto Start Game after hibernation wake-up");
-            publish("🎮 Starting game after wake-up...");
+            forceUpdateMainGUIStatus("🎮 Starting game after wake-up...");
             
             // Run Auto Start Game task
             AutoStartGameTask autoStartTask = new AutoStartGameTask(instance, 10, () -> {
@@ -160,7 +194,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                 waitTime++;
                 
                 if (waitTime % 10 == 0) {
-                    publish("🎮 Starting game... (" + waitTime + "s)");
+                    forceUpdateMainGUIStatus("🎮 Starting game... (" + waitTime + "s)");
                 }
             }
             
@@ -194,7 +228,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
             }
             
             // STEP 2: Deploy marches (but don't add to GUI yet)
-            publish("🚀 Deploying marches...");
+            forceUpdateMainGUIStatus("🚀 Deploying marches...");
             if (!deployMarchesForHibernation()) {
                 return false;
             }
@@ -202,13 +236,13 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
             // STEP 3: Wait for deployment to complete (longest deploy time)
             long waitTime = calculateDeploymentWaitTime();
             if (waitTime > 0) {
-                publish("⏳ Waiting " + TimeUtils.formatTime(waitTime) + " for deployments to complete...");
+                forceUpdateMainGUIStatus("⏳ Waiting " + TimeUtils.formatTime(waitTime) + " for deployments to complete...");
                 Main.addToConsole("⏳ " + instance.name + " waiting " + TimeUtils.formatTime(waitTime) + " for deployments");
                 Thread.sleep(waitTime * 1000);
             }
             
             // STEP 4: Collect real times from detail pages
-            publish("📊 Collecting real march times...");
+            forceUpdateMainGUIStatus("📊 Collecting real march times...");
             if (!collectRealMarchDetailsAndAddToGUI()) {
                 Main.addToConsole("⚠️ " + instance.name + " failed to collect real times, using estimates");
                 // Add estimated times as fallback
@@ -236,44 +270,47 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
     }
     
     /**
-     * Deploy marches without adding to GUI (that comes later)
+     * FIXED: Deploy marches based on settings and available queues (not hardcoded)
      */
     private boolean deployMarchesForHibernation() {
         try {
             // Setup march view
             if (!navigator.setupMarchView()) {
-                publish("❌ Failed to setup march view");
+                forceUpdateMainGUIStatus("❌ Failed to setup march view");
                 return false;
             }
             
             // Read queue statuses
             List<MarchDetector.MarchInfo> queues = MarchDetector.readMarchQueues(instance.index);
             if (queues.isEmpty()) {
-                publish("⚠️ No queues detected");
+                forceUpdateMainGUIStatus("⚠️ No queues detected");
                 return false;
             }
             
-            // Find idle queues and deploy
+            // Find idle queues and count active ones
             List<Integer> idleQueues = findIdleQueues(queues);
             int activeQueues = countActiveQueues(queues);
             
-            if (idleQueues.isEmpty() || activeQueues >= gatherSettings.maxQueues) {
-                Main.addToConsole("ℹ️ " + instance.name + " no deployment needed");
+            // FIXED: Use settings to determine how many marches to deploy
+            int maxQueues = gatherSettings.maxQueues; // From settings (default 6)
+            int availableSlots = maxQueues - activeQueues;
+            int marchesToDeploy = Math.min(availableSlots, idleQueues.size());
+            
+            if (marchesToDeploy <= 0) {
+                Main.addToConsole("ℹ️ " + instance.name + " no deployment needed - " + activeQueues + "/" + maxQueues + " queues active");
                 return true;
             }
             
-            int slotsAvailable = gatherSettings.maxQueues - activeQueues;
-            int marchesToStart = Math.min(slotsAvailable, idleQueues.size());
-            
-            Main.addToConsole("🚀 " + instance.name + " deploying " + marchesToStart + " march(es)");
+            Main.addToConsole("🚀 " + instance.name + " deploying " + marchesToDeploy + " march(es) to idle queues: " + idleQueues);
+            forceUpdateMainGUIStatus("🚀 Deploying " + marchesToDeploy + " march(es)...");
             
             int successCount = 0;
             boolean isFirstMarch = true;
             deployedMarches.clear();
             
-            // Deploy all marches
-            for (int i = 0; i < marchesToStart; i++) {
-                String resourceType = gatherSettings.getNextResource();
+            // FIXED: Deploy to available idle queues using resource loop
+            for (int i = 0; i < marchesToDeploy; i++) {
+                String resourceType = gatherSettings.getNextResource(); // Cycles through resource loop
                 int queueNumber = idleQueues.get(i);
                 
                 LocalDateTime deployStartTime = LocalDateTime.now();
@@ -298,13 +335,19 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                     
                     Main.addToConsole("✅ " + instance.name + " deployed " + resourceType + 
                                     " on Queue " + queueNumber + " (deploy time: " + deployTime + ")");
+                    
+                    forceUpdateMainGUIStatus("🚀 Deployed " + (i+1) + "/" + marchesToDeploy + " (" + resourceType + " Q" + queueNumber + ")");
+                } else {
+                    Main.addToConsole("❌ " + instance.name + " failed to deploy " + resourceType + " on Queue " + queueNumber);
                 }
             }
             
+            Main.addToConsole("📊 " + instance.name + " deployment summary: " + successCount + "/" + marchesToDeploy + " successful");
             return successCount > 0;
             
         } catch (Exception e) {
             System.err.println("❌ Error deploying marches: " + e.getMessage());
+            forceUpdateMainGUIStatus("❌ Deployment error: " + e.getMessage());
             return false;
         }
     }
@@ -322,7 +365,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                 MarchDeployInfo deployInfo = deployedMarches.get(i);
                 
                 try {
-                    publish("📊 Collecting details for Queue " + deployInfo.queueNumber + " (" + (i+1) + "/" + deployedMarches.size() + ")");
+                    forceUpdateMainGUIStatus("📊 Collecting details for Queue " + deployInfo.queueNumber + " (" + (i+1) + "/" + deployedMarches.size() + ")");
                     
                     // Collect real details using your working details collector
                     MarchDetailsCollector.MarchDetails details = collectDetailsForQueue(deployInfo);
@@ -553,7 +596,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
     }
     
     /**
-     * FIXED: Update hibernation status with countdown and force Main update
+     * FIXED: Update hibernation status with countdown every time (countdown timer)
      */
     private void updateHibernationStatusWithForce() {
         try {
@@ -565,12 +608,10 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                     String remainingTime = TimeUtils.formatTime(remainingHibernation);
                     String status = "😴 Hibernating - Wake in " + remainingTime;
                     
-                    // FIXED: Force update the instance state and publish to Main
-                    instance.setState(status);
-                    instance.setAutoGatherRunning(true); // Keep this true during hibernation
-                    publish(status); // This will call process() which updates Main's display
+                    // FIXED: Force update every time to ensure countdown updates
+                    forceUpdateMainGUIStatus(status);
                     
-                    System.out.println("🔄 [HIBERNATION] " + instance.name + " status: " + status);
+                    System.out.println("🔄 [HIBERNATION COUNTDOWN] " + instance.name + " remaining: " + remainingTime);
                 } else {
                     System.out.println("🔄 [HIBERNATION] " + instance.name + " hibernation time expired");
                 }
@@ -597,8 +638,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                 // FIXED: Set hibernation status IMMEDIATELY before stopping
                 String remainingTime = TimeUtils.formatTime(hibernationSeconds);
                 String hibernationStatus = "😴 Hibernating - Wake in " + remainingTime;
-                instance.setState(hibernationStatus);
-                publish(hibernationStatus); // Force Main to update immediately
+                forceUpdateMainGUIStatus(hibernationStatus); // Force Main to update immediately
                 
                 System.out.println("🔄 [HIBERNATION] " + instance.name + " set initial status: " + hibernationStatus);
                 
@@ -609,8 +649,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                     // FIXED: Maintain hibernation status even after instance stops
                     String currentRemaining = TimeUtils.formatTime(hibernationDurationSeconds);
                     String currentStatus = "😴 Hibernating - Wake in " + currentRemaining;
-                    instance.setState(currentStatus);
-                    publish(currentStatus); // Force Main update
+                    forceUpdateMainGUIStatus(currentStatus); // Force Main update
                     System.out.println("🔄 [HIBERNATION] " + instance.name + " maintained status after stop: " + currentStatus);
                 });
                 
@@ -619,8 +658,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                 
                 // FIXED: Ensure hibernation status is still set after stop
                 String finalStatus = "😴 Hibernating - Wake in " + TimeUtils.formatTime(hibernationSeconds);
-                instance.setState(finalStatus);
-                publish(finalStatus); // Force Main update
+                forceUpdateMainGUIStatus(finalStatus); // Force Main update
                 System.out.println("🔄 [HIBERNATION] " + instance.name + " final status set: " + finalStatus);
             }
             
@@ -637,8 +675,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
             if (!BotUtils.isInstanceRunning(instance.index)) {
                 Main.addToConsole("🌅 " + instance.name + " waking up (starting instance)");
                 
-                instance.setState("🌅 Waking up...");
-                publish("🌅 Waking up...");
+                forceUpdateMainGUIStatus("🌅 Waking up...");
                 
                 // Start the instance
                 MemuActions.startInstance(null, instance.index, () -> {
@@ -648,8 +685,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                 // Wait for startup
                 Thread.sleep(10000);
                 
-                instance.setState("☀️ Awake - Ready for deployment");
-                publish("☀️ Awake - Ready for deployment");
+                forceUpdateMainGUIStatus("☀️ Awake - Ready for deployment");
                 
                 // Clear hibernation tracking
                 hibernationStartTime = null;
