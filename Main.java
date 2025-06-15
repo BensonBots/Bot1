@@ -512,6 +512,9 @@ public class Main extends JFrame {
         });
     }
 
+    /**
+     * FIXED: Enhanced auto start method that properly chains Auto Start Game → Auto Gather
+     */
     private void enableAutoStartIfConfigured(int index) {
         Map<String, ModuleState<?>> modules = instanceModules.getOrDefault(index, Collections.emptyMap());
         
@@ -539,6 +542,7 @@ public class Main extends JFrame {
                         AutoStartGameTask autoStartTask = new AutoStartGameTask(inst, 10, () -> {
                             addConsoleMessage("✅ Game started successfully for " + instanceName);
                             
+                            // FIXED: After game starts, check if auto gather should also start
                             Map<String, ModuleState<?>> currentModules = instanceModules.getOrDefault(index, Collections.emptyMap());
                             ModuleState<?> currentAutoGatherModule = currentModules.get("Auto Gather Resources");
                             boolean currentAutoGatherEnabled = currentAutoGatherModule != null && currentAutoGatherModule.enabled;
@@ -610,7 +614,7 @@ public class Main extends JFrame {
     }
 
     /**
-     * FIXED: Enhanced status updater with hibernation countdown display
+     * FIXED: Enhanced status updater with proper hibernation detection and Auto Start Game after wake
      */
     private void startStatusUpdater() {
         statusTimer = new javax.swing.Timer(1000, e -> { // Update every second for hibernation countdown
@@ -620,58 +624,142 @@ public class Main extends JFrame {
                 // Get the current state from the instance
                 String currentState = inst.getState();
                 String displayStatus = currentState;
+                boolean actuallyRunning = BotUtils.isInstanceRunning(inst.index);
+                boolean autoGatherRunning = inst.isAutoGatherRunning();
                 
-                // FIXED: Enhanced hibernation status with colors and countdown
-                if (currentState != null) {
-                    if (currentState.contains("Hibernating - Wake in")) {
-                        // Extract time and format nicely
-                        String timePattern = "Wake in (\\d{2}:\\d{2}:\\d{2})";
-                        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(timePattern);
-                        java.util.regex.Matcher matcher = pattern.matcher(currentState);
-                        
-                        if (matcher.find()) {
-                            String timeRemaining = matcher.group(1);
-                            displayStatus = "😴 Hibernating ⏰ " + timeRemaining;
+                // FIXED: ABSOLUTE PRIORITY for hibernation detection
+                boolean isHibernating = false;
+                
+                // Check multiple ways to detect hibernation
+                if (currentState != null && currentState.contains("Hibernating - Wake in")) {
+                    // Direct hibernation status from AutoGatherResourcesTask
+                    java.util.regex.Pattern timePattern = java.util.regex.Pattern.compile("Wake in (\\d{2}:\\d{2}:\\d{2})");
+                    java.util.regex.Matcher matcher = timePattern.matcher(currentState);
+                    
+                    if (matcher.find()) {
+                        String timeRemaining = matcher.group(1);
+                        displayStatus = "😴 Hibernating ⏰ " + timeRemaining;
+                    } else {
+                        displayStatus = "😴 Hibernating...";
+                    }
+                    isHibernating = true;
+                    
+                    // FORCE UPDATE: Ensure hibernation status shows in table immediately
+                    Object currentTableValue = tableModel.getValueAt(i, 2);
+                    if (!displayStatus.equals(currentTableValue)) {
+                        tableModel.setValueAt(displayStatus, i, 2);
+                        System.out.println("🔥 [FORCE HIBERNATION] " + inst.name + " forced to: " + displayStatus);
+                    }
+                    
+                } else if (autoGatherRunning && !actuallyRunning) {
+                    // Instance stopped but auto gather running = must be hibernating
+                    displayStatus = "😴 Hibernating...";
+                    isHibernating = true;
+                    
+                    // FORCE UPDATE: Ensure hibernation status shows in table immediately
+                    Object currentTableValue = tableModel.getValueAt(i, 2);
+                    if (!displayStatus.equals(currentTableValue)) {
+                        tableModel.setValueAt(displayStatus, i, 2);
+                        System.out.println("🔥 [FORCE HIBERNATION] " + inst.name + " forced to: " + displayStatus);
+                    }
+                }
+                
+                // FIXED: Only process other states if NOT hibernating
+                if (!isHibernating) {
+                    // FIXED: Enhanced hibernation detection and status display for other states
+                    if (currentState != null) {
+                        if (currentState.contains("Waking up")) {
+                            displayStatus = "🌅 Waking up...";
+                        } else if (currentState.contains("Awake")) {
+                            displayStatus = "☀️ Awake - Ready";
+                        } else if (currentState.contains("Starting") || currentState.contains("Deploying")) {
+                            displayStatus = "🚀 " + currentState;
+                        } else if (currentState.contains("Collecting")) {
+                            displayStatus = "📊 " + currentState;
+                        } else if (currentState.contains("hibernating auto gather")) {
+                            displayStatus = "🔄 " + currentState;
+                        } else if (currentState.contains("Starting game")) {
+                            displayStatus = "🎮 " + currentState;
+                        } else if (currentState.equals("Idle")) {
+                            if (autoGatherRunning && actuallyRunning) {
+                                // Instance is running and auto gather is running = actively gathering
+                                displayStatus = "🌾 Auto Gathering...";
+                            } else if (autoGatherRunning && !actuallyRunning) {
+                                // This should have been caught by hibernation check above, but failsafe
+                                displayStatus = "😴 Hibernating...";
+                            } else {
+                                // Normal idle state
+                                displayStatus = actuallyRunning ? "💤 Idle" : "⏹️ Stopped";
+                            }
                         } else {
-                            displayStatus = "😴 Hibernating...";
+                            // Handle other states normally
+                            if (actuallyRunning) {
+                                displayStatus = currentState != null ? currentState : "💤 Idle";
+                            } else {
+                                displayStatus = "⏹️ Stopped";
+                            }
                         }
-                    } else if (currentState.contains("Waking up")) {
-                        displayStatus = "🌅 Waking up...";
-                    } else if (currentState.contains("Awake")) {
-                        displayStatus = "☀️ Awake - Ready";
-                    } else if (currentState.contains("Starting") || currentState.contains("Deploying")) {
-                        displayStatus = "🚀 " + currentState;
-                    } else if (currentState.contains("Collecting")) {
-                        displayStatus = "📊 " + currentState;
-                    } else if (currentState.contains("hibernating auto gather")) {
-                        displayStatus = "🔄 " + currentState;
-                    } else if (currentState.equals("Idle") && inst.isAutoGatherRunning()) {
-                        // FIXED: Check if this instance should be hibernating
-                        boolean actuallyRunning = BotUtils.isInstanceRunning(inst.index);
-                        if (!actuallyRunning && inst.isAutoGatherRunning()) {
-                            // Instance is stopped but auto gather is running = hibernating
-                            displayStatus = "😴 Hibernating...";
-                        } else {
+                    } else {
+                        // FIXED: Handle null currentState case
+                        if (autoGatherRunning && actuallyRunning) {
                             displayStatus = "🌾 Auto Gathering...";
+                        } else {
+                            displayStatus = actuallyRunning ? "💤 Idle" : "⏹️ Stopped";
+                        }
+                    }
+                } // End of !isHibernating check
+                
+                // FIXED: Only update table if status actually changed to prevent flickering
+                Object currentTableValue = tableModel.getValueAt(i, 2);
+                if (!displayStatus.equals(currentTableValue)) {
+                    // EXTRA PROTECTION: Don't overwrite hibernation status with basic status
+                    String currentTableStr = currentTableValue.toString();
+                    boolean tableShowsHibernation = currentTableStr.contains("Hibernating") || currentTableStr.contains("😴");
+                    boolean newStatusIsBasic = displayStatus.equals("⏹️ Stopped") || displayStatus.equals("💤 Idle") || displayStatus.equals("Running");
+                    
+                    if (tableShowsHibernation && newStatusIsBasic && isHibernating) {
+                        // Don't overwrite hibernation status with basic status
+                        System.out.println("🛡️ [PROTECTION] Preventing overwrite of hibernation status for " + inst.name);
+                        System.out.println("    Current table: '" + currentTableStr + "', Attempted: '" + displayStatus + "'");
+                    } else {
+                        tableModel.setValueAt(displayStatus, i, 2);
+                        
+                        // FIXED: Enhanced logging for hibernation state changes
+                        if (displayStatus.contains("Hibernating") || currentTableValue.toString().contains("Hibernating")) {
+                            System.out.println("🔄 [STATUS UPDATE] " + inst.name + ": '" + currentTableValue + "' → '" + displayStatus + "'");
+                            System.out.println("    Actually Running: " + actuallyRunning + ", Auto Gather: " + autoGatherRunning);
+                            System.out.println("    Current State: '" + currentState + "'");
+                            System.out.println("    Is Hibernating: " + isHibernating);
+                            addConsoleMessage("🔄 " + inst.name + " status: " + displayStatus);
                         }
                     }
                 }
                 
-                // Update table with enhanced status (only if it actually changed)
-                Object currentTableValue = tableModel.getValueAt(i, 2);
-                if (!displayStatus.equals(currentTableValue)) {
-                    tableModel.setValueAt(displayStatus, i, 2);
-                    System.out.println("🔄 [STATUS UPDATE] " + inst.name + ": '" + currentTableValue + "' → '" + displayStatus + "'");
-                }
-                
-                // Also check for actual running status periodically (every 10 seconds)
+                // FIXED: Periodically verify actual instance status (every 10 seconds)
                 if (Math.random() < 0.1) { // 10% chance per second = roughly every 10 seconds
                     String actualStatus = getInstanceStatus(inst.index);
                     if (!actualStatus.equals(inst.status)) {
                         inst.status = actualStatus;
-                        // Don't overwrite hibernation status if it's showing hibernation info
-                        if (!currentState.contains("Hibernating") && !currentState.contains("Waking")) {
-                            // Only update if we're not showing special status
+                        
+                        // FIXED: Handle hibernation wake-up detection
+                        if (actualStatus.equals("Running") && 
+                            currentState != null && 
+                            currentState.contains("Hibernating") && 
+                            autoGatherRunning) {
+                            
+                            System.out.println("🌅 [STATUS] Detected wake-up for " + inst.name + " - instance now running");
+                            addConsoleMessage("🌅 " + inst.name + " awakened from hibernation");
+                            inst.setState("🌅 Instance awakened");
+                            
+                            // FIXED: Trigger Auto Start Game after hibernation wake-up
+                            triggerAutoStartGameAfterHibernation(inst);
+                        }
+                        
+                        // Only overwrite display status if we're not showing special hibernation info
+                        if (!isHibernating && 
+                            !currentState.contains("Waking") && 
+                            !currentState.contains("Starting game")) {
+                            
                             if (displayStatus.equals(currentState)) {
                                 tableModel.setValueAt(actualStatus, i, 2);
                             }
@@ -681,6 +769,43 @@ public class Main extends JFrame {
             }
         });
         statusTimer.start();
+    }
+
+    /**
+     * FIXED: Trigger Auto Start Game after hibernation wake-up
+     */
+    private void triggerAutoStartGameAfterHibernation(MemuInstance inst) {
+        // Check if Auto Start Game is enabled for this instance
+        Map<String, ModuleState<?>> modules = instanceModules.getOrDefault(inst.index, Collections.emptyMap());
+        ModuleState<?> autoStartModule = modules.get("Auto Start Game");
+        
+        boolean autoStartEnabled = autoStartModule != null && autoStartModule.enabled;
+        
+        if (autoStartEnabled) {
+            addConsoleMessage("🎮 " + inst.name + " triggering Auto Start Game after hibernation wake-up");
+            
+            new Thread(() -> {
+                try {
+                    // Wait a moment for instance to fully start
+                    Thread.sleep(5000);
+                    
+                    AutoStartGameTask autoStartTask = new AutoStartGameTask(inst, 10, () -> {
+                        addConsoleMessage("✅ " + inst.name + " game started successfully after hibernation");
+                        inst.setState("🎮 Game ready after hibernation");
+                    });
+                    
+                    autoStartTask.execute();
+                    
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    addConsoleMessage("⚠️ " + inst.name + " Auto Start Game interrupted after hibernation");
+                } catch (Exception e) {
+                    addConsoleMessage("❌ " + inst.name + " Auto Start Game failed after hibernation: " + e.getMessage());
+                }
+            }).start();
+        } else {
+            System.out.println("ℹ️ Auto Start Game not enabled for " + inst.name + " after hibernation wake-up");
+        }
     }
 
     public void saveSettings() {

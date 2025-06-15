@@ -12,8 +12,9 @@ import java.util.Map;
 import javax.imageio.ImageIO;
 
 /**
- * HIBERNATING AutoGatherResourcesTask - Closes instance while waiting, reopens when needed
- * FIXED: Applied hibernation to your working version with proper flow and real times
+ * FIXED: AutoGatherResourcesTask with proper hibernation status updates and Auto Start Game on wake
+ * FIXED: Status updates to Main for hibernation display
+ * FIXED: Auto Start Game runs when waking up from hibernation
  */
 public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
     private final MemuInstance instance;
@@ -84,11 +85,17 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                         // PHASE 2: Hibernation monitoring and wake-up
                         if (monitorHibernationAndWakeup()) {
                             Main.addToConsole("🌅 " + instance.name + " waking up for new deployment");
+                            
+                            // FIXED: Run Auto Start Game when waking up from hibernation
+                            if (!runAutoStartGameAfterWakeup()) {
+                                Main.addToConsole("⚠️ " + instance.name + " Auto Start Game failed after wake-up, continuing anyway");
+                            }
+                            
                             // Reset to deploy new marches
                             initialDeploymentDone = false;
                         } else {
                             // Still hibernating - update status with countdown
-                            updateHibernationStatus();
+                            updateHibernationStatusWithForce();
                             Thread.sleep(30000); // Check every 30 seconds
                         }
                     }
@@ -115,6 +122,65 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
         }
         
         return null;
+    }
+    
+    /**
+     * FIXED: Run Auto Start Game after waking up from hibernation (if enabled)
+     */
+    private boolean runAutoStartGameAfterWakeup() {
+        try {
+            // Check if Auto Start Game is enabled for this instance
+            Map<String, ModuleState<?>> modules = Main.instanceModules.getOrDefault(instance.index, new java.util.HashMap<>());
+            ModuleState<?> autoStartModule = modules.get("Auto Start Game");
+            
+            boolean autoStartEnabled = autoStartModule != null && autoStartModule.enabled;
+            
+            if (!autoStartEnabled) {
+                System.out.println("ℹ️ Auto Start Game not enabled for instance " + instance.index + " after wake-up");
+                return true; // Not an error, just not enabled
+            }
+            
+            Main.addToConsole("🎮 " + instance.name + " running Auto Start Game after hibernation wake-up");
+            publish("🎮 Starting game after wake-up...");
+            
+            // Run Auto Start Game task
+            AutoStartGameTask autoStartTask = new AutoStartGameTask(instance, 10, () -> {
+                Main.addToConsole("✅ " + instance.name + " game started successfully after hibernation");
+            });
+            
+            // Execute and wait for completion
+            autoStartTask.execute();
+            
+            // Wait for Auto Start Game to complete (with timeout)
+            int waitTime = 0;
+            int maxWaitTime = 120; // 2 minutes maximum wait
+            
+            while (!autoStartTask.isDone() && waitTime < maxWaitTime) {
+                Thread.sleep(1000);
+                waitTime++;
+                
+                if (waitTime % 10 == 0) {
+                    publish("🎮 Starting game... (" + waitTime + "s)");
+                }
+            }
+            
+            if (autoStartTask.isDone()) {
+                Main.addToConsole("✅ " + instance.name + " Auto Start Game completed after hibernation");
+                
+                // Give game time to fully load before continuing
+                Thread.sleep(8000);
+                return true;
+            } else {
+                Main.addToConsole("⚠️ " + instance.name + " Auto Start Game timed out after hibernation");
+                autoStartTask.cancel(true);
+                return false;
+            }
+            
+        } catch (Exception e) {
+            System.err.println("❌ Error running Auto Start Game after wake-up: " + e.getMessage());
+            Main.addToConsole("❌ " + instance.name + " Auto Start Game error after wake-up: " + e.getMessage());
+            return false;
+        }
     }
     
     /**
@@ -457,7 +523,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                 }
                 
                 // Update hibernation status
-                updateHibernationStatus();
+                updateHibernationStatusWithForce();
                 return false;
             }
             
@@ -487,9 +553,9 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
     }
     
     /**
-     * FIXED: Update hibernation status with countdown in GUI
+     * FIXED: Update hibernation status with countdown and force Main update
      */
-    private void updateHibernationStatus() {
+    private void updateHibernationStatusWithForce() {
         try {
             if (hibernationStartTime != null && hibernationDurationSeconds > 0) {
                 long elapsedHibernation = java.time.Duration.between(hibernationStartTime, LocalDateTime.now()).getSeconds();
@@ -499,12 +565,11 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                     String remainingTime = TimeUtils.formatTime(remainingHibernation);
                     String status = "😴 Hibernating - Wake in " + remainingTime;
                     
-                    // FIXED: Force update the instance state and mark as hibernating
+                    // FIXED: Force update the instance state and publish to Main
                     instance.setState(status);
                     instance.setAutoGatherRunning(true); // Keep this true during hibernation
-                    publish(status);
+                    publish(status); // This will call process() which updates Main's display
                     
-                    // FIXED: Also log for debugging
                     System.out.println("🔄 [HIBERNATION] " + instance.name + " status: " + status);
                 } else {
                     System.out.println("🔄 [HIBERNATION] " + instance.name + " hibernation time expired");
@@ -533,7 +598,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                 String remainingTime = TimeUtils.formatTime(hibernationSeconds);
                 String hibernationStatus = "😴 Hibernating - Wake in " + remainingTime;
                 instance.setState(hibernationStatus);
-                publish(hibernationStatus);
+                publish(hibernationStatus); // Force Main to update immediately
                 
                 System.out.println("🔄 [HIBERNATION] " + instance.name + " set initial status: " + hibernationStatus);
                 
@@ -545,6 +610,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                     String currentRemaining = TimeUtils.formatTime(hibernationDurationSeconds);
                     String currentStatus = "😴 Hibernating - Wake in " + currentRemaining;
                     instance.setState(currentStatus);
+                    publish(currentStatus); // Force Main update
                     System.out.println("🔄 [HIBERNATION] " + instance.name + " maintained status after stop: " + currentStatus);
                 });
                 
@@ -554,6 +620,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                 // FIXED: Ensure hibernation status is still set after stop
                 String finalStatus = "😴 Hibernating - Wake in " + TimeUtils.formatTime(hibernationSeconds);
                 instance.setState(finalStatus);
+                publish(finalStatus); // Force Main update
                 System.out.println("🔄 [HIBERNATION] " + instance.name + " final status set: " + finalStatus);
             }
             
@@ -571,6 +638,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                 Main.addToConsole("🌅 " + instance.name + " waking up (starting instance)");
                 
                 instance.setState("🌅 Waking up...");
+                publish("🌅 Waking up...");
                 
                 // Start the instance
                 MemuActions.startInstance(null, instance.index, () -> {
@@ -581,6 +649,7 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
                 Thread.sleep(10000);
                 
                 instance.setState("☀️ Awake - Ready for deployment");
+                publish("☀️ Awake - Ready for deployment");
                 
                 // Clear hibernation tracking
                 hibernationStartTime = null;
@@ -673,11 +742,21 @@ public class AutoGatherResourcesTask extends SwingWorker<Void, String> {
         return count;
     }
     
+    /**
+     * FIXED: Process method to update Main's display with hibernation status
+     */
     @Override
     protected void process(List<String> chunks) {
         if (!chunks.isEmpty()) {
             String latestMessage = chunks.get(chunks.size() - 1);
+            
+            // FIXED: Force update the instance state for Main's status updater to pick up
             instance.setState(latestMessage);
+            
+            // Log hibernation status updates for debugging
+            if (latestMessage.contains("Hibernating")) {
+                System.out.println("🔄 [MAIN UPDATE] Forced hibernation status update: " + latestMessage);
+            }
         }
     }
     
